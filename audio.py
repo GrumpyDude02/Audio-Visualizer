@@ -1,7 +1,9 @@
 import librosa as lr
 import numpy as np
 import pygame as pg
-import threading
+import threading, time
+import soundfile as sf
+import matplotlib.pyplot as plt
 
 
 min_db = -80
@@ -16,20 +18,29 @@ class AudioFile:
     def __init__(self, filepath: str, hop: int, n_fft: int):
         try:
             self.filepath = filepath
-            t, sr = lr.load(filepath, sr=None)
-            self.time_series = t
-            self.sample_rate = sr
-            self.pos = pg.mixer.music.get_pos()
-            self.hop = hop
-            self.n_fft = n_fft
             self.started = False
             self.paused = False
             self.finished = False
+
+            data, sr = sf.read(filepath)
+
+            if len(data.shape) > 1:
+                data = np.mean(data, axis=1)
+
+            self.time_series = data
+            self.sample_rate = sr
+
+            self.samples = len(data)
+
+            self.pos = pg.mixer.music.get_pos()
+            self.hop = hop
+            self.n_fft = n_fft
+
             self.spectrogram = lr.amplitude_to_db(
                 np.abs(lr.stft(self.time_series, hop_length=self.hop, n_fft=self.n_fft)), ref=np.max
             )
 
-            self.frequencies = lr.fft_frequencies(n_fft=self.n_fft)
+            self.frequencies = lr.fft_frequencies(sr=self.sample_rate, n_fft=self.n_fft)
             self.times = lr.core.frames_to_time(
                 np.arange(self.spectrogram.shape[1]), sr=self.sample_rate, hop_length=self.hop, n_fft=self.n_fft
             )
@@ -38,7 +49,8 @@ class AudioFile:
             self.time_ratio = len(self.times) / self.times[len(self.times) - 1]
 
             print("loaded")
-        except:
+        except Exception as e:
+            print(e)
             raise AudioFileTypeError
 
     def start(self, pos: int = None):
