@@ -4,6 +4,9 @@ import pygame as pg
 import threading
 
 
+min_db = -80
+
+
 class AudioFileTypeError(Exception):
     def __init__(self):
         self.message = "File is not a valid audio file or does not exist"
@@ -22,7 +25,18 @@ class AudioFile:
             self.started = False
             self.paused = False
             self.finished = False
-            self.stft = lr.stft(self.time_series, hop_length=self.hop, n_fft=self.n_fft)
+            self.spectrogram = lr.amplitude_to_db(
+                np.abs(lr.stft(self.time_series, hop_length=self.hop, n_fft=self.n_fft)), ref=np.max
+            )
+
+            self.frequencies = lr.fft_frequencies(n_fft=self.n_fft)
+            self.times = lr.core.frames_to_time(
+                np.arange(self.spectrogram.shape[1]), sr=self.sample_rate, hop_length=self.hop, n_fft=self.n_fft
+            )
+
+            self.frequencies_ratio = len(self.frequencies) / self.frequencies[len(self.frequencies) - 1]
+            self.time_ratio = len(self.times) / self.times[len(self.times) - 1]
+
             print("loaded")
         except:
             raise AudioFileTypeError
@@ -55,7 +69,14 @@ class AudioFile:
         self.pos = pg.mixer.music.get_pos()
 
     def get_pos(self):
-        pg.mixer.music.get_pos()
+        return pg.mixer.music.get_pos()
+
+    def get_decibel(self, frequency):
+        pos = self.get_pos() * 0.001
+        try:
+            return self.spectrogram[int(frequency * self.frequencies_ratio)][int(self.time_ratio * pos)]
+        except IndexError:
+            return min_db
 
 
 class AudioManager:
@@ -65,24 +86,32 @@ class AudioManager:
         self.audio_queue = []
         self.current = None
 
-    def add(self, filepath, hops, n_stft):
-        with AudioManager.lock:
-            try:
-                print(filepath)
-                audio = AudioFile(filepath, hops, n_stft)
+    def add(self, filepath, hops, n_fft):
+        try:
+            print(filepath)
+            audio = AudioFile(filepath, hops, n_fft)
+            with AudioManager.lock:
                 self.audio_queue.append(audio)
-                return True
-            except AudioFileTypeError:
-                return False
+            return True
+        except AudioFileTypeError:
+            return False
 
     def update_queue(self):
-        with AudioManager.lock:
-            if self.current is None or self.current.finished == True:
-                if len(self.audio_queue) == 0:
-                    self.current = None
-                    return
-                self.current = self.audio_queue.pop(0)
-                self.current.start()
+        if AudioManager.lock.acquire(blocking=False):
+            try:
+                if self.current is None or self.current.finished:
+                    if len(self.audio_queue) == 0:
+                        self.current = None
+                        return
+                    self.current = self.audio_queue.pop(0)
+                    self.current.start()
+            finally:
+                AudioManager.lock.release()
+
+    def get_decibel(self, frequency):
+        if self.current is None:
+            return min_db
+        return self.current.get_decibel(frequency)
 
     def update(self):
         self.update_queue()
