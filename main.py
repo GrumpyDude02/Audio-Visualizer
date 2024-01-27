@@ -94,5 +94,5 @@ class Application:
 
 if __name__ == "__main__":
     # main()
-    app = Application(10, 60, (600, 600), True, "Audio Visualizer")
+    app = Application(10, 60, (gp.WIDTH, gp.HEIGHT), True, "Audio Visualizer")
     app.run()

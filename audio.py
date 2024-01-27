@@ -1,6 +1,6 @@
 import numpy as np
 import pygame as pg
-import threading, time
+import threading, time, math
 import soundfile as sf
 import globals as gp
 from Bar import Bar
@@ -35,17 +35,9 @@ class AudioFile:
             bands = bands[: len(bands) // 2]
             self.start_index = round(gp.start_frequency * self.fft_size / self.sample_rate)
             self.end_index = min(round(gp.end_frequency * self.fft_size / self.sample_rate), len(bands))
-            self.fft_bins = bands[self.start_index : self.end_index]
+            self.fft_bins = bands[self.start_index : self.end_index + 1]
 
-            self.chunks = [
-                np.abs(fft(self.data[i : i + self.fft_size]))
-                for i in range(0, len(self.data) - self.fft_size, self.fft_size)
-            ]
-            max_abs_value = max(np.max(chunk) for chunk in self.chunks)
-
-            # Normalize each chunk
-            for i in range(len(self.chunks)):
-                self.chunks[i] /= max_abs_value
+            self.chunks = [self.data[i : i + self.fft_size] for i in range(0, len(self.data) - self.fft_size, self.fft_size)]
 
             self.amps = [0 for _ in range(len(self.fft_bins))]
             self.amps_queue = []
@@ -81,26 +73,30 @@ class AudioFile:
         self.paused = False
         pg.mixer.music.unpause()
 
-    def update(self):
+    def update(self, dt):
         self.pos = pg.mixer.music.get_pos()
-        chunk_index = int(self.pos * 1000 / self.time_window)
-        if (not pg.mixer.music.get_busy() and chunk_index >= len(self.chunks)) and not self.paused:
+        chunk_index = int(((self.pos + dt * 500) * 1000 / self.time_window))
+        if not pg.mixer.music.get_busy() and not self.paused:
             self.finished = True
-        if chunk_index < len(self.chunks):
-            temp = self.chunks[chunk_index][self.start_index : self.end_index]
-            self.amps_queue.append(temp)
-            if len(self.amps_queue) == 1:
-                self.amps = self.amps_queue[0]
-            else:
-                self.amps = []
-                for i in range(len(self.amps_queue[0])):
-                    avg = 0
-                    for j in range(len(self.amps_queue)):
-                        avg += self.amps_queue[j][i]
-                    avg /= len(self.amps_queue)
-                    self.amps.append(avg)
-            if len(self.amps_queue) >= self.amps_queue_limit:
-                self.amps_queue.pop(0)
+            return
+        if len(self.chunks) <= chunk_index:
+            return
+        ffted_chunk = np.abs(fft(self.chunks[chunk_index]))
+        max = np.max(ffted_chunk) + 1e-20
+        ffted_chunk /= max
+        self.amps_queue.append(ffted_chunk[self.start_index : self.end_index])
+        if len(self.amps_queue) == 1:
+            self.amps = self.amps_queue[0]
+        else:
+            self.amps = []
+            for i in range(len(self.amps_queue[0])):
+                avg = 0
+                for j in range(len(self.amps_queue)):
+                    avg += self.amps_queue[j][i]
+                avg /= len(self.amps_queue)
+                self.amps.append(avg)
+        if len(self.amps_queue) >= self.amps_queue_limit:
+            self.amps_queue.pop(0)
 
     def get_pos(self):
         return pg.mixer.music.get_pos()
@@ -144,11 +140,33 @@ class AudioManager:
                         self.current = None
                         return
                     self.current = self.audio_queue.pop(0)
-                    self.bar_width = max(window_width / gp.bands_number, 2)
-                    step = (len(self.current.fft_bins)) // gp.bands_number
+                    step = 1.06
+                    konst = 1
+                    f = self.current.fft_bins[0]
+                    i = 0
+                    self.usable_freq_indexes = [i]
+                    while 1:
+                        konst *= step
+                        next_freq = f * konst
+                        i = int(next_freq * self.fft_size / self.current.sample_rate)
+                        if i > len(self.current.fft_bins):
+                            break
+                        self.usable_freq_indexes.append(i)
+
+                    self.usable_freq_indexes = sorted(set(self.usable_freq_indexes))
+                    self.bar_width = max(window_width / len(self.usable_freq_indexes), 2)
                     self.bars = [
-                        Bar((i, i + step), (int(i * self.bar_width / step), window_height // 2), (255, 0, 0))
-                        for i in range(0, len(self.current.fft_bins), step)
+                        Bar(
+                            {
+                                "frequencies": self.current.fft_bins[
+                                    self.usable_freq_indexes[i] : self.usable_freq_indexes[i + 1]
+                                ],
+                                "index_range": (self.usable_freq_indexes[i], self.usable_freq_indexes[i + 1]),
+                            },
+                            (i * self.bar_width, window_height // 2),
+                            (255, 0, 0),
+                        )
+                        for i in range(len(self.usable_freq_indexes) - 1)
                     ]
 
                     self.current.start()
@@ -175,7 +193,7 @@ class AudioManager:
         self.update_queue(window_width, window_height)
         if self.current is None:
             return
-        self.current.update()
+        self.current.update(dt)
         amps = self.get_amps()
         for i in range(len(self.bars)):
-            self.bars[i].update(amps, min_height, gp.max_val, max_height, dt)
+            self.bars[i].update(amps, dt, min_height, max_height)
