@@ -135,6 +135,7 @@ class AudioManager:
         self.hanning_window = hann(fft_size)
         self.bars = None
         self.bar_width = None
+        self.usable_freq_indexes = None
 
     def add(self, filepath, hops, n_fft):
         try:
@@ -228,7 +229,7 @@ class AudioManager:
     def get_amps(self):
         if self.current is not None:
             return self.current.get_amps()
-        return [gp.min_val for _ in range(len(self.fft_size) // 2)]
+        return None
 
     def empty_queue(self):
         if self.current is None or len(self.audio_queue) == 0:
