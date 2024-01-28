@@ -3,12 +3,17 @@ import globals as gp
 import numpy as np
 
 
+def linear(t):
+    return 1 - (1 - t)
+
+
 def ease_out_cubic(t):
     return 1 - (1 - t) ** 3
 
 
 class Bar:
-    scale = 600 * 1.1
+    scale = 450
+    smoothing_scale = 5
 
     def __init__(self, frequency_index: tuple, pos, color) -> None:
         self.pos = pos
@@ -18,12 +23,10 @@ class Bar:
         self.amplitude = 0
 
     def update(self, amps, dt, min_height, max_height):
-        self.amplitude = 0
-        for a in amps[self.frequency_index["index_range"][0] : self.frequency_index["index_range"][1]]:
-            self.amplitude += a
-        self.amplitude /= len(amps[self.frequency_index["index_range"][0] : self.frequency_index["index_range"][1]])
+        self.amplitude = max(amps[self.frequency_index["index_range"][0] : self.frequency_index["index_range"][1]])
         target_height = min(max_height, max(self.amplitude * Bar.scale, min_height))
-        self.height = int(self.height + (target_height - self.height) * ease_out_cubic(min(dt * 15, 1)))
+        self.height = int(self.height + (target_height - self.height) * dt * Bar.smoothing_scale)
+        # self.height = self.amplitude * Bar.scale
 
     def draw(self, window, width):
         rect1 = pg.Rect(self.pos[0], self.pos[1], width, self.height // 2)

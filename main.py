@@ -22,7 +22,7 @@ class Application:
         self.display_loading_lock = threading.Lock()
 
         self.fps = fps
-        self.dt = 1 / self.fps
+        self.dt = 1 / (self.fps + 1e-16)
         self.width = size[0]
         self.height = size[1]
 
@@ -44,8 +44,8 @@ class Application:
         )
         self.font = pg.font.SysFont("Arial", self.font_size)
 
-        self.bar_min_height = self.height * 0.02
-        self.bar_max_height = self.height * 0.8
+        self.bar_min_height = self.height * 0.03
+        self.bar_max_height = self.height
 
     def resize(self, n_size: tuple):
         scale_x = n_size[0] / gp.base_resolution[0]
