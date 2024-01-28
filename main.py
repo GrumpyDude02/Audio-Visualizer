@@ -54,6 +54,7 @@ class Application:
         self.height = n_size[1]
         self.font_size = int(self.base_font_size * min(scale_x, scale_y))
         self.font = pg.font.SysFont("Arial", self.font_size)
+        self.am.resize(self.width, self.height)
 
     def add_file(self, filepath):
         if len(self.audio_loader_threads) < self.thread_limit:
@@ -80,6 +81,8 @@ class Application:
                     self.am.skip()
                 if event.key == pg.K_p:
                     self.am.toggle_pause()
+            if event.type == pg.VIDEORESIZE:
+                self.resize(event.size)
             if event.type == pg.DROPFILE:
                 self.add_file(event.file)
 

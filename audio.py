@@ -149,51 +149,76 @@ class AudioManager:
     def update_queue(self, window_width, window_height):
         if AudioManager.lock.acquire(blocking=False):
             try:
-                if self.current is None or self.current.finished:
-                    if len(self.audio_queue) == 0:
-                        self.current = None
-                        return
-                    self.current = self.audio_queue.pop(0)
-                    if AudioManager.Logarithmic:
-                        step = 1.06
-                        konst = 1
-                        f = 1
-                        i = 0
-                        self.usable_freq_indexes = [i]
-                        while 1:
-                            konst *= step
-                            next_freq = f * konst
-                            i = int(next_freq * self.fft_size / self.current.sample_rate)
-                            if i > len(self.current.fft_bins):
-                                break
-                            self.usable_freq_indexes.append(i)
+                if not (self.current is None or self.current.finished):
+                    return
+                if len(self.audio_queue) == 0:
+                    self.current = None
+                    return
+                self.current = self.audio_queue.pop(0)
+                if AudioManager.Logarithmic:
+                    self.calculate_freq_indexes_log()
+                    self.bar_width = min(gp.min_bar_width, max(window_width / (len(self.usable_freq_indexes)), 2))
+                else:
+                    self.calculate_freq_indexes_linear()
+                    self.bar_width = min(
+                        gp.min_bar_width,
+                        max(int(window_width / gp.bands_number), window_width / len(self.usable_freq_indexes)),
+                    )
 
-                        self.usable_freq_indexes = sorted(set(self.usable_freq_indexes))
-                        self.bar_width = max(window_width / len(self.usable_freq_indexes), 2)
+                offset = (window_width - self.bar_width * len(self.usable_freq_indexes)) // 2
+                l = len(self.usable_freq_indexes) - 1
+                self.bars = [
+                    Bar(
+                        {
+                            "frequencies": self.current.fft_bins[
+                                self.usable_freq_indexes[i] : self.usable_freq_indexes[min(i + 1, l)]
+                            ],
+                            "index_range": (self.usable_freq_indexes[i], self.usable_freq_indexes[min(i + 1, l)]),
+                        },
+                        (100, 0),
+                        (255, 0, 0),
+                    )
+                    for i in range(len(self.usable_freq_indexes))
+                ]
+                for i in range(len(self.bars)):
+                    self.bars[i].pos = (i * self.bar_width + offset, window_height // 2)
 
-                    else:
-                        step = int(len(self.current.fft_bins) / gp.bands_number)
-                        self.usable_freq_indexes = [i for i in range(0, len(self.current.fft_bins), step)]
-                        self.bar_width = max(
-                            int(window_width / gp.bands_number), window_width / len(self.usable_freq_indexes)
-                        )
-                    self.bars = [
-                        Bar(
-                            {
-                                "frequencies": self.current.fft_bins[
-                                    self.usable_freq_indexes[i] : self.usable_freq_indexes[i + 1]
-                                ],
-                                "index_range": (self.usable_freq_indexes[i], self.usable_freq_indexes[i + 1]),
-                            },
-                            (i * self.bar_width, window_height // 2),
-                            (255, 0, 0),
-                        )
-                        for i in range(len(self.usable_freq_indexes) - 1)
-                    ]
-                    self.current.start()
+                self.current.start()
 
             finally:
                 AudioManager.lock.release()
+
+    def calculate_freq_indexes_log(self):
+        step = 1.06
+        konst = 1
+        f = 1
+        i = 0
+        self.usable_freq_indexes = [i]
+        while True:
+            konst *= step
+            next_freq = f * konst
+            i = int(next_freq * self.fft_size / self.current.sample_rate)
+            if i > len(self.current.fft_bins):
+                break
+            self.usable_freq_indexes.append(i)
+        self.usable_freq_indexes = sorted(set(self.usable_freq_indexes))
+
+    def calculate_freq_indexes_linear(self):
+        step = int(len(self.current.fft_bins) / gp.bands_number)
+        self.usable_freq_indexes = [i for i in range(0, len(self.current.fft_bins), step)]
+
+    def resize(self, window_width, window_height):
+        if not self.usable_freq_indexes:
+            return
+        if AudioManager.Logarithmic:
+            self.bar_width = min(gp.min_bar_width, max(window_width / (len(self.usable_freq_indexes)), 2))
+        else:
+            self.bar_width = min(
+                gp.min_bar_width, max(int(window_width / gp.bands_number), window_width / len(self.usable_freq_indexes))
+            )
+        offset = (window_width - self.bar_width * len(self.usable_freq_indexes)) // 2
+        for i in range(len(self.bars)):
+            self.bars[i].pos = (i * self.bar_width + offset, window_height // 2)
 
     def get_decibel(self, frequency):
         if self.current is None:
