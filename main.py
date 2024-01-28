@@ -44,7 +44,7 @@ class Application:
         )
         self.font = pg.font.SysFont("Arial", self.font_size)
 
-        self.bar_min_height = self.height * 0.03
+        self.bar_min_height = self.height * 0.01
         self.bar_max_height = self.height
 
     def resize(self, n_size: tuple):
@@ -62,13 +62,24 @@ class Application:
 
     def display_loading(self):
         if len(self.audio_loader_threads) > 0:
-            pg.draw.circle(self.window, (0, 255, 255), (100, 100), 50)
+            rect = pg.Rect(self.width * 0.05, self.height * 0.05, self.width * 0.2, self.height * 0.15)
+            pos = (rect.center[0], rect.center[1])
+            text_render = self.font.render("Loading file...", color=(255, 255, 255), antialias=True)
+            pg.draw.rect(self.window, (0, 0, 0), rect, border_radius=8)
+            pg.draw.rect(self.window, (255, 255, 255), rect, 5, border_radius=8)
+            pos = text_render.get_rect(center=pos)
+            self.window.blit(text_render, pos)
 
     def handle_events(self):
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 pg.quit()
                 sys.exit()
+            if event.type == pg.KEYDOWN:
+                if event.key == pg.K_n:
+                    self.am.skip()
+                if event.key == pg.K_p:
+                    self.am.toggle_pause()
             if event.type == pg.DROPFILE:
                 self.add_file(event.file)
 
@@ -94,5 +105,5 @@ class Application:
 
 if __name__ == "__main__":
     # main()
-    app = Application(10, 60, (gp.WIDTH, gp.HEIGHT), True, "Audio Visualizer")
+    app = Application(20, 60, (gp.WIDTH, gp.HEIGHT), True, "Audio Visualizer")
     app.run()

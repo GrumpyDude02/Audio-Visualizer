@@ -12,8 +12,8 @@ def ease_out_cubic(t):
 
 
 class Bar:
-    scale = 450
-    smoothing_scale = 5
+    scale = 300
+    smoothing_scale = 12
 
     def __init__(self, frequency_index: tuple, pos, color) -> None:
         self.pos = pos
@@ -29,11 +29,7 @@ class Bar:
         # self.height = self.amplitude * Bar.scale
 
     def draw(self, window, width):
-        rect1 = pg.Rect(self.pos[0], self.pos[1], width, self.height // 2)
-        rect2 = pg.Rect(self.pos[0], self.pos[1] - self.height // 2, width, self.height // 2)
-        outline1 = pg.Rect(self.pos[0], self.pos[1], width, self.height // 2)
-        outline2 = pg.Rect(self.pos[0], self.pos[1] - self.height // 2, width, self.height // 2)
-        pg.draw.rect(window, self.color, rect2)
-        pg.draw.rect(window, (100, 0, 0), rect1)
-        pg.draw.rect(window, (255, 255, 255), outline2, width=1)
-        pg.draw.rect(window, (100, 100, 100), outline1, width=1)
+        rect1 = pg.Rect(self.pos[0], self.pos[1] - self.height // 2, width, self.height)
+        outline1 = pg.Rect(self.pos[0], self.pos[1] - self.height // 2, width, self.height)
+        pg.draw.rect(window, (255, 255, 255), rect1)
+        pg.draw.rect(window, (255, 255, 255), outline1, width=1)
