@@ -58,7 +58,7 @@ class Application:
 
     def add_file(self, filepath):
         if len(self.audio_loader_threads) < self.thread_limit:
-            self.audio_loader_threads.append(threading.Thread(target=self.am.add, args=[filepath, 256, 2048 * 2]))
+            self.audio_loader_threads.append(threading.Thread(target=self.am.add, args=[filepath]))
             self.audio_loader_threads[-1].start()
 
     def display_loading(self):
