@@ -100,7 +100,7 @@ class AudioManager:
     def add(self, filepath):
         try:
             audio = AudioFile(filepath, self.fft_size)
-            with AudioManager.lock:
+            with self.lock:
                 self.audio_queue.append(audio)
             return True
         except AudioFileTypeError:
@@ -152,7 +152,7 @@ class AudioManager:
                 self.current.start(self.loader, self.callback_func)
 
             finally:
-                AudioManager.lock.release()
+                self.lock.release()
 
     def calculate_freq_indexes_log(self):
         step = 1.06
@@ -176,7 +176,7 @@ class AudioManager:
     def resize(self, window_width, window_height):
         if not self.usable_freq_indexes:
             return
-        if AudioManager.Logarithmic:
+        if self.Logarithmic:
             self.bar_width = min(gp.min_bar_width, max(window_width / (len(self.usable_freq_indexes)), 2))
         else:
             self.bar_width = min(
