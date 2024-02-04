@@ -34,7 +34,7 @@ class Application:
         self.window = pg.display.set_mode(size, flags=self.flags)
         pg.display.set_caption(name)
         self.clock = pg.time.Clock()
-        self.am = AudioManager(gp.fft_size)
+        self.am = AudioManager(self, fft_size=gp.fft_size)
         self.audio_loader_threads = []
         self.thread_limit = 50
         self.min_size = min_size
@@ -44,7 +44,7 @@ class Application:
         )
         self.font = pg.font.SysFont("Arial", self.font_size)
 
-        self.bar_min_height = self.height * 0.01
+        self.bar_min_height = int(self.height * 0.01)
         self.bar_max_height = self.height
 
     def resize(self, n_size: tuple):
@@ -54,7 +54,7 @@ class Application:
         self.height = n_size[1]
         self.font_size = int(self.base_font_size * min(scale_x, scale_y))
         self.font = pg.font.SysFont("Arial", self.font_size)
-        self.am.resize(self.width, self.height)
+        self.am.resize()
 
     def add_file(self, filepath):
         if len(self.audio_loader_threads) < self.thread_limit:
@@ -91,7 +91,7 @@ class Application:
         for thread in self.audio_loader_threads:
             if not thread.is_alive():
                 self.audio_loader_threads.remove(thread)
-        self.am.update(self.width, self.height, self.bar_min_height, self.bar_max_height, self.dt)
+        self.am.update()
         self.dt = self.clock.tick(self.fps) * 0.001
 
     def draw(self):

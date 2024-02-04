@@ -1,6 +1,5 @@
 import pygame as pg
 import globals as gp
-import numpy as np
 
 
 def linear(t):
@@ -27,8 +26,8 @@ class Bar:
             self.amplitude = amps[self.frequency_index["index_range"][0]]
         else:
             self.amplitude = max(amps[self.frequency_index["index_range"][0] : self.frequency_index["index_range"][1]])
-        target_height = min(max_height, max(self.amplitude * Bar.scale, min_height))
-        self.height = int(self.height + (target_height - self.height) * dt * Bar.smoothing_scale)
+        target_height = min(max_height, max(int(self.amplitude * Bar.scale), min_height))
+        self.height = self.height + (target_height - self.height) * dt * Bar.smoothing_scale
         # self.height = self.amplitude * Bar.scale
 
     def draw(self, window, width):

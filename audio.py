@@ -35,14 +35,7 @@ class AudioFile:  # struct everything should be public
             self.cache = None
             self.fft_size = fft_size
 
-            bands = np.fft.fftfreq(n=fft_size, d=1 / self.sample_rate)
-            self.fft_bins = bands[: len(bands) // 2]
-
-            self.start_index = round(gp.start_frequency * fft_size / self.sample_rate)
-            self.end_index = min(round(gp.end_frequency * fft_size / self.sample_rate), len(bands))
-
-            self.amps = [0 for _ in range(len(self.fft_bins))]
-            self.amps_queue = []
+            self.chunks_queue = []
             print(f"loaded in:{time.perf_counter()-t}")
 
         except Exception as e:
@@ -82,19 +75,22 @@ class AudioFile:  # struct everything should be public
 
 
 class AudioManager:
-    def __init__(self, fft_size: int):
+
+    def __init__(self, app, fft_size: int = 2048, sample_rate: int = 44100):
+        self.app = app
         self.lock = threading.Lock()
-        self.logarithmic = True
         self.stream: pyaudio.Stream = None
         self.audio_queue = []
         self.current: AudioFile = None
         self.fft_size = fft_size
+        self.sample_rate = sample_rate
         self.hanning_window = hann(fft_size)
         self.bars = None
         self.bar_width = None
         self.usable_freq_indexes = None
-        self.num_averages = 1
+        self.num_averages = 0
         self.loader = pyaudio.PyAudio()
+        self.init_bars()
 
     def add(self, filepath):
         try:
@@ -105,7 +101,7 @@ class AudioManager:
         except AudioFileTypeError:
             return False
 
-    def update_queue(self, window_width, window_height):
+    def update_queue(self):
         if self.lock.acquire(blocking=False):
             try:
                 if self.current is not None and self.current.state != AudioFile.FINISHED:
@@ -119,71 +115,57 @@ class AudioManager:
                     return
 
                 self.current = self.audio_queue.pop(0)
-
-                if self.logarithmic:
-                    self.calculate_freq_indexes_log()
-                    self.bar_width = min(gp.min_bar_width, max(window_width / (len(self.usable_freq_indexes)), 2))
-                else:
-                    self.calculate_freq_indexes_linear()
-                    self.bar_width = min(
-                        gp.min_bar_width,
-                        max(int(window_width / gp.bands_number), window_width / len(self.usable_freq_indexes)),
-                    )
-
-                offset = (window_width - self.bar_width * len(self.usable_freq_indexes)) // 2
-                l = len(self.usable_freq_indexes) - 1
-                self.bars = [
-                    Bar(
-                        {
-                            "frequencies": self.current.fft_bins[
-                                self.usable_freq_indexes[i] : self.usable_freq_indexes[min(i + 1, l)]
-                            ],
-                            "index_range": (self.usable_freq_indexes[i], self.usable_freq_indexes[min(i + 1, l)]),
-                        },
-                        (100, 0),
-                        (255, 0, 0),
-                    )
-                    for i in range(len(self.usable_freq_indexes))
-                ]
-                for i in range(len(self.bars)):
-                    self.bars[i].pos = (i * self.bar_width + offset, window_height // 2)
                 self.stream = self.current.open_stream_output(self.loader, self.callback_func)
                 self.current.start(self.stream)
 
             finally:
                 self.lock.release()
 
-    def calculate_freq_indexes_log(self):
+    def init_bars(self):
         step = 1.06
         konst = 1
         f = 1
         i = 0
         self.usable_freq_indexes = [i]
+        bands = np.fft.fftfreq(n=self.fft_size, d=1 / self.sample_rate)
+        self.fft_bins = bands[: len(bands) // 2]
         while True:
             konst *= step
             next_freq = f * konst
-            i = int(next_freq * self.fft_size / self.current.sample_rate)
-            if i > len(self.current.fft_bins):
+            i = int(next_freq * self.fft_size / self.sample_rate)
+            if i > len(self.fft_bins):
                 break
             self.usable_freq_indexes.append(i)
+
         self.usable_freq_indexes = sorted(set(self.usable_freq_indexes))
 
-    def calculate_freq_indexes_linear(self):
-        step = int(len(self.current.fft_bins) / gp.bands_number)
-        self.usable_freq_indexes = [i for i in range(0, len(self.current.fft_bins), step)]
+        self.bar_width = min(gp.min_bar_width, max(self.app.width / (len(self.usable_freq_indexes)), 2))
+        self.amps = [0 for _ in range(len(self.fft_bins))]
+        offset = (self.app.width - self.bar_width * len(self.usable_freq_indexes)) // 2
+        l = len(self.usable_freq_indexes) - 1
+        self.bars = [
+            Bar(
+                {
+                    "frequencies": self.fft_bins[self.usable_freq_indexes[i] : self.usable_freq_indexes[min(i + 1, l)]],
+                    "index_range": (self.usable_freq_indexes[i], self.usable_freq_indexes[min(i + 1, l)]),
+                },
+                (100, 0),
+                (255, 0, 0),
+            )
+            for i in range(len(self.usable_freq_indexes))
+        ]
+        for i in range(len(self.bars)):
+            self.bars[i].pos = (i * self.bar_width + offset, self.app.height // 2)
 
-    def resize(self, window_width, window_height):
+    def resize(self):
         if not self.usable_freq_indexes:
             return
-        if self.Logarithmic:
-            self.bar_width = min(gp.min_bar_width, max(window_width / (len(self.usable_freq_indexes)), 2))
-        else:
-            self.bar_width = min(
-                gp.min_bar_width, max(int(window_width / gp.bands_number), window_width / len(self.usable_freq_indexes))
-            )
-        offset = (window_width - self.bar_width * len(self.usable_freq_indexes)) // 2
+
+        self.bar_width = min(gp.min_bar_width, max(self.app.width / (len(self.usable_freq_indexes)), 2))
+
+        offset = (self.app.width - self.bar_width * len(self.usable_freq_indexes)) // 2
         for i in range(len(self.bars)):
-            self.bars[i].pos = (i * self.bar_width + offset, window_height // 2)
+            self.bars[i].pos = (i * self.bar_width + offset, self.app.height // 2)
 
     def empty_queue(self):
         if self.current is None or len(self.audio_queue) == 0:
@@ -193,6 +175,7 @@ class AudioManager:
     def skip(self):
         if self.current is not None:
             self.current.stop()
+            self.amps = [0 for _ in range(self.fft_size)]
 
     def toggle_pause(self):
         if self.current is not None:
@@ -205,12 +188,10 @@ class AudioManager:
             bar.draw(window, self.bar_width - 1)
 
     def callback_func(self, in_data, frame_count, time_info, status):
-        if status == pyaudio.paComplete:
-            self.current.state = AudioFile.FINISHED
-            return (None, pyaudio.paComplete)
+        if self.current.state == AudioFile.PAUSED:
+            return (np.zeros(self.current.channels, dtype=np.int16), pyaudio.paContinue)
 
         data = self.current.file.read(frames=frame_count, dtype=gp.dtype)
-
         data_len = len(data)
 
         if data_len == 0:
@@ -225,29 +206,24 @@ class AudioManager:
         ffted_chunk = fft(mono_data * self.hanning_window, norm="forward", n=self.fft_size)
         avg = ffted_chunk
         if self.num_averages > 1:
-            self.current.amps_queue.append(ffted_chunk)
-            avg = np.average(self.current.amps_queue, axis=0)
-            if len(self.current.amps_queue) > self.num_averages:
-                self.current.amps_queue.pop(0)
+            self.current.chunks_queue.append(ffted_chunk)
+            avg = np.average(self.current.chunks_queue, axis=0)
+            if len(self.current.chunks_queue) > self.num_averages:
+                self.current.chunks_queue.pop(0)
 
-        self.current.amps = np.log10(np.abs(avg) + 1e-6)
+        self.amps = np.log10(np.abs(avg) + 1e-6)
 
-        m = np.max(self.current.amps)
+        m = np.max(self.amps)
         if m < 1e-6:
-            self.current.amps *= 0
+            self.amps *= 0
         else:
-            self.current.amps /= m
+            self.amps /= m
         return (data, pyaudio.paContinue)
 
-    def update(self, window_width, window_height, min_height, max_height, dt):
-        self.update_queue(window_width, window_height)
-        if self.current is None:
-            return
+    def update(self):
+        self.update_queue()
         for i in range(len(self.bars)):
-            self.bars[i].update(self.current.amps, dt, min_height, max_height)
+            self.bars[i].update(self.amps, self.app.dt, self.app.bar_min_height, self.app.bar_max_height)
 
     def terminate(self):
-        if self.current is not None and self.current.state in (AudioFile.PLAYING, AudioFile.PAUSED):
-            self.current.stop()
-            self.empty_queue()
         self.loader.terminate()
