@@ -22,8 +22,6 @@ class AudioFile:  # struct everything should be public
     PAUSED = 2
     FINISHED = 3
 
-    Stream: pyaudio.Stream = None
-
     def __init__(self, filepath: str, fft_size):
         try:
             t = time.perf_counter()
@@ -52,38 +50,39 @@ class AudioFile:  # struct everything should be public
             print(e)
             raise AudioFileTypeError
 
-    def start(self, loader: pyaudio.PyAudio, callback):
-        AudioFile.Stream = loader.open(
+    def open_stream_output(self, loader: pyaudio.PyAudio, callback):
+        return loader.open(
+            rate=self.sample_rate,
             channels=self.channels,
             format=pyaudio.paInt16,
-            rate=self.sample_rate,
             output=True,
             frames_per_buffer=self.fft_size,
             stream_callback=callback,
         )
-        AudioFile.Stream.start_stream()
+
+    def start(self, stream):
+        self.stream = stream
+        self.stream.start_stream()
         self.state = AudioFile.PLAYING
         return 0
 
     def toggle_pause(self):
         if self.state == AudioFile.PLAYING:
             self.state = AudioFile.PAUSED
-            AudioFile.Stream.stop_stream()
+            self.stream.stop_stream()
         elif self.state == AudioFile.PAUSED:
             self.state = AudioFile.PLAYING
-            AudioFile.Stream.start_stream()
+            self.stream.start_stream()
 
     def stop(self):
-        AudioFile.Stream.stop_stream()
-        AudioFile.Stream.close()
+        self.stream.stop_stream()
+        self.stream.close()
         self.state = AudioFile.FINISHED
         print("terminated")
 
 
 class AudioManager:
-
     def __init__(self, fft_size: int):
-
         self.lock = threading.Lock()
         self.logarithmic = True
         self.stream: pyaudio.Stream = None
@@ -148,8 +147,8 @@ class AudioManager:
                 ]
                 for i in range(len(self.bars)):
                     self.bars[i].pos = (i * self.bar_width + offset, window_height // 2)
-
-                self.current.start(self.loader, self.callback_func)
+                self.stream = self.current.open_stream_output(self.loader, self.callback_func)
+                self.current.start(self.stream)
 
             finally:
                 self.lock.release()
@@ -248,4 +247,7 @@ class AudioManager:
             self.bars[i].update(self.current.amps, dt, min_height, max_height)
 
     def terminate(self):
+        if self.current is not None and self.current.state in (AudioFile.PLAYING, AudioFile.PAUSED):
+            self.current.stop()
+            self.empty_queue()
         self.loader.terminate()

@@ -74,6 +74,7 @@ class Application:
     def handle_events(self):
         for event in pg.event.get():
             if event.type == pg.QUIT:
+                self.am.terminate()
                 pg.quit()
                 sys.exit()
             if event.type == pg.KEYDOWN:
