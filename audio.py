@@ -62,10 +62,10 @@ class AudioFile:  # struct everything should be public
     def toggle_pause(self):
         if self.state == AudioFile.PLAYING:
             self.state = AudioFile.PAUSED
-            self.stream.stop_stream()
+            # self.stream.stop_stream()
         elif self.state == AudioFile.PAUSED:
             self.state = AudioFile.PLAYING
-            self.stream.start_stream()
+            # self.stream.start_stream()
 
     def stop(self):
         self.stream.stop_stream()
@@ -79,7 +79,6 @@ class AudioManager:
     def __init__(self, app, fft_size: int = 2048, sample_rate: int = 44100):
         self.app = app
         self.lock = threading.Lock()
-        self.stream: pyaudio.Stream = None
         self.audio_queue = []
         self.current: AudioFile = None
         self.fft_size = fft_size
@@ -115,8 +114,8 @@ class AudioManager:
                     return
 
                 self.current = self.audio_queue.pop(0)
-                self.stream = self.current.open_stream_output(self.loader, self.callback_func)
-                self.current.start(self.stream)
+                stream = self.current.open_stream_output(self.loader, self.callback_func)
+                self.current.start(stream)
 
             finally:
                 self.lock.release()
@@ -189,7 +188,7 @@ class AudioManager:
 
     def callback_func(self, in_data, frame_count, time_info, status):
         if self.current.state == AudioFile.PAUSED:
-            return (np.zeros(self.current.channels, dtype=np.int16), pyaudio.paContinue)
+            return (np.zeros((frame_count, self.current.channels), dtype=np.int16), pyaudio.paContinue)
 
         data = self.current.file.read(frames=frame_count, dtype=gp.dtype)
         data_len = len(data)
@@ -226,4 +225,7 @@ class AudioManager:
             self.bars[i].update(self.amps, self.app.dt, self.app.bar_min_height, self.app.bar_max_height)
 
     def terminate(self):
+        if self.current is not None and self.current.stream is not None:
+            self.current.stop()
+        self.audio_queue.clear()
         self.loader.terminate()
