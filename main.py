@@ -1,17 +1,36 @@
-import sys, threading
-from audio import AudioManager
+import sys, threading, time
 import pygame as pg
 import globals as gp
+from audio import AudioManager, AudioFile
+from Bar import Bar
+from Tools.Buttons import ToggleButtons, ButtonTemplate
+import Tools.Slider as sl
+from math import ceil
+from Tools.functions import fill
 
 
-bar_number = 40
+ToggleTemplate = ButtonTemplate(
+    (255, 255, 255), (240, 240, 240), (200, 200, 200), (180, 180, 180), 2, 4, 2, (240, 240, 240), 5, -1, None
+)
 
-
-def ease_out_cubic(t):
-    return 1 - (1 - t) ** 3
-
+slider_template = ButtonTemplate((0, 0, 0), (255, 165, 0), (200, 200, 200), (20, 20, 20), 2, 3, 2, (20, 20, 20), 5, -1, None)
 
 bluish_grey = (54, 69, 79)
+
+toggle_button_size = (0.05, 0.1)
+toggle_button_pos = (0.5 - toggle_button_size[0] / 2, 1.07)
+
+skip_button_size = (0.03, 0.07)
+skip_button_pos = (0.58, 1.08)
+
+slider_pos = (0.3, 1.214)
+slider_size = (0.4, 0.025)
+
+
+def time_format(time: int) -> str:
+    t = int(time)
+
+    return f"{t//60:02d}:{t%60:02d}"
 
 
 class Application:
@@ -26,6 +45,9 @@ class Application:
         self.width = size[0]
         self.height = size[1]
 
+        self.control_time = 3000  # miliseconds
+        self.last_update_time = 0
+
         self.flags = pg.HWACCEL
         self.resizable = resizable
 
@@ -34,7 +56,7 @@ class Application:
         self.window = pg.display.set_mode(size, flags=self.flags)
         pg.display.set_caption(name)
         self.clock = pg.time.Clock()
-        self.am = AudioManager(self, fft_size=gp.fft_size)
+        self.am = AudioManager(self, fft_size=gp.fft_size, bands_number=gp.bands_number)
         self.audio_loader_threads = []
         self.thread_limit = 50
         self.min_size = min_size
@@ -46,15 +68,102 @@ class Application:
 
         self.bar_min_height = int(self.height * 0.01)
         self.bar_max_height = self.height
+        self.bar_width = None
+        self.init_bars()
+
+        self.images = {
+            AudioFile.PAUSED: pg.image.load("images/play.png").convert_alpha(),
+            AudioFile.PLAYING: pg.image.load("images/pause.png").convert_alpha(),
+            AudioManager.QUEUE_FULL: pg.image.load("images/skip_to_end.png").convert_alpha(),
+            AudioManager.QUEUE_EMPTY: pg.image.load("images/skip_to_end.png").convert_alpha(),
+        }
+        fill(self.images[AudioManager.QUEUE_EMPTY], (150, 150, 150, 255))
+
+        self.calculate_pos(self.width, self.height)
+
+        self.play_pause_toggle = ToggleButtons(
+            self.images,
+            ToggleTemplate,
+            toggle_button_size,
+            toggle_button_pos,
+            (self.width, self.height),
+            keys=[AudioFile.PAUSED, AudioFile.PLAYING],
+            scale=0.5,
+        )
+
+        self.skip_button = ToggleButtons(
+            self.images,
+            ToggleTemplate,
+            skip_button_size,
+            skip_button_pos,
+            (self.width, self.height),
+            keys=[AudioManager.QUEUE_EMPTY, AudioManager.QUEUE_FULL],
+            current_key=self.am.get_queue_state(),
+            scale=0.5,
+        )
+
+        # self.slider = Slider(slider_template, slider_pos, slider_size, None, (self.width, self.height))
+        self.slider = sl.TimeSlider(
+            slider_template, slider_pos, slider_size, self.font, time_format, [0, 1], (self.width, self.height)
+        )
+
+        self.show_control_bar = False
+
+    def init_bars(self, bars_number: int = None):
+
+        dic = self.am.get_usable_freq(bars_number)
+        frequencies = dic["frequencies"]
+        self.indexes = dic["indexes"]
+        l = len(self.indexes) - 1
+
+        self.bar_width = min(gp.min_bar_width, max(self.width / (l + 1), 2))
+
+        offset = (self.width - self.bar_width * (l + 1)) // 2
+        self.bars = [
+            Bar(
+                {
+                    "frequencies": (frequencies[self.indexes[i] : self.indexes[min(i + 1, l)]]),
+                    "index_range": (self.indexes[i], self.indexes[min(i + 1, l)]),
+                },
+                (100, 0),
+                gp.bar_color,
+                (225, 241, 255),
+            )
+            for i in range(len(self.indexes))
+        ]
+        for i in range(len(self.bars)):
+            self.bars[i].pos = (i * self.bar_width + offset, self.height // 2)
+
+    def calculate_pos(self, width, height):
+        self.rect_target_pos = (width * 0.1, height * 0.75)
+        self.rect_lower_pos = (width * 0.1, height * 1.04)
+        self.control_bar_rect = pg.Rect(
+            self.rect_lower_pos[0],
+            self.rect_lower_pos[1],
+            width * 0.80,
+            height * 0.4,
+        )
+        self.upper_bars_height = height // 2
+        self.target_bars_height = height * 0.35
 
     def resize(self, n_size: tuple):
         scale_x = n_size[0] / gp.base_resolution[0]
         scale_y = n_size[1] / gp.base_resolution[1]
         self.width = n_size[0]
         self.height = n_size[1]
+        self.calculate_pos(self.width, self.height)
         self.font_size = int(self.base_font_size * min(scale_x, scale_y))
         self.font = pg.font.SysFont("Arial", self.font_size)
-        self.am.resize()
+        if not self.indexes:
+            return
+        self.bar_width = min(gp.min_bar_width, max(self.width / (len(self.indexes)), 2))
+
+        offset = (self.width - self.bar_width * len(self.indexes)) // 2
+        for i in range(len(self.bars)):
+            self.bars[i].pos = (i * self.bar_width + offset, self.height // 2)
+        self.play_pause_toggle.resize(self.images, (self.width, self.height), self.am.get_audio_state())
+        self.skip_button.resize(self.images, (self.width, self.height), self.am.get_queue_state())
+        self.slider.resize((self.width, self.height), self.font)
 
     def add_file(self, filepath):
         if len(self.audio_loader_threads) < self.thread_limit:
@@ -82,21 +191,119 @@ class Application:
                     self.am.skip()
                 if event.key == pg.K_p:
                     self.am.toggle_pause()
+                    self.play_pause_toggle.update(self.am.get_audio_state())
+                if event.key == pg.K_s:
+                    self.am.set_pos(50)
+            if event.type == pg.MOUSEMOTION:
+                self.show_control_bar = True
+                self.last_update_time = time.time() * 1000
+
             if event.type == pg.VIDEORESIZE:
                 self.resize(event.size)
             if event.type == pg.DROPFILE:
                 self.add_file(event.file)
 
+        if self.play_pause_toggle.check_input():
+            self.am.toggle_pause()
+            self.skip_button.update(self.am.get_queue_state())
+            self.play_pause_toggle.update(self.am.get_audio_state())
+
+        if self.skip_button.check_input():
+            self.am.skip()
+
     def update(self):
         for thread in self.audio_loader_threads:
             if not thread.is_alive():
                 self.audio_loader_threads.remove(thread)
-        self.am.update()
-        self.dt = self.clock.tick(self.fps) * 0.001
+        self.play_pause_toggle.check_input()
+        current_song_time = self.am.update_queue(self.play_pause_toggle, self.skip_button)
+        if current_song_time is not None:
+            self.slider.set_range((0, current_song_time))
+
+        self.slider.update_elapsed_time(self.am.get_current_audio_pos())
+
+        t = time.time() * 1000
+        if t - self.last_update_time >= 1500 and not self.control_bar_rect.collidepoint(pg.mouse.get_pos()):
+            self.show_control_bar = False
+
+        if self.show_control_bar and self.control_bar_rect.top >= self.rect_target_pos[1]:
+            self.am.update_timeline = self.slider.update()
+            if self.am.update_timeline[0]:
+                self.am.set_pos(self.slider.output)
+            v = (self.control_bar_rect.top - self.rect_target_pos[1]) * self.dt * self.dt * 250
+            k = (self.bars[0].pos[1] - self.target_bars_height) * self.dt * self.dt * 250
+        elif self.control_bar_rect.top <= self.rect_lower_pos[1]:
+            v = (self.control_bar_rect.top - self.rect_lower_pos[1]) * self.dt * self.dt * 250
+            k = (self.bars[0].pos[1] - self.upper_bars_height) * self.dt * self.dt * 250
+        else:
+            v = 0
+        if v != 0:
+            for bar in self.bars:
+                bar.pos = (bar.pos[0], (bar.pos[1] - k))
+            self.control_bar_rect.top = self.control_bar_rect.top - v
+            self.play_pause_toggle.outline_rect.top = self.play_pause_toggle.outline_rect.top - v
+            self.play_pause_toggle.rectangle.top = self.play_pause_toggle.rectangle.top - v
+            self.skip_button.outline_rect.top = self.skip_button.outline_rect.top - v
+            self.skip_button.rectangle.top = self.skip_button.rectangle.top - v
+            self.slider.button_rect.top = self.slider.button_rect.top - v
+            self.slider.button_outline.top = self.slider.button_outline.top - v
+            self.slider.rectangle_bar.top = self.slider.rectangle_bar.top - v
+
+        amps = self.am.get_amps()
+        for bar in self.bars:
+            bar.update(amps, self.dt, self.bar_min_height, self.bar_max_height)
+        self.dt = min(self.clock.tick(self.fps) * 0.001, 0.066)
 
     def draw(self):
         self.window.fill(bluish_grey)
-        self.am.draw_bars(self.window)
+        for bar in self.bars:
+            bar.draw(self.window, self.bar_width - 1)
+
+        # drawing control bar----------------------------
+        if self.control_bar_rect.top < self.height:
+            pg.draw.rect(
+                self.window,
+                (35, 35, 35),
+                (
+                    self.control_bar_rect[0] + 3,
+                    self.control_bar_rect[1] - 3,
+                    self.control_bar_rect[2],
+                    self.control_bar_rect[3],
+                ),
+                border_radius=4,
+            )
+            pg.draw.rect(self.window, (200, 200, 200), self.control_bar_rect, border_radius=4)
+            pg.draw.rect(self.window, (0, 0, 0), self.control_bar_rect, border_radius=4, width=2)
+            pg.draw.rect(
+                self.window,
+                (35, 35, 35),
+                (
+                    self.play_pause_toggle.outline_rect[0] + 4,
+                    self.play_pause_toggle.outline_rect[1] - 3,
+                    self.play_pause_toggle.outline_rect[2],
+                    self.play_pause_toggle.outline_rect[3],
+                ),
+                border_radius=2,
+            )
+            self.play_pause_toggle.draw(self.window)
+            pg.draw.rect(self.window, (0, 0, 0), self.play_pause_toggle.outline_rect, border_radius=2, width=2)
+
+            pg.draw.rect(
+                self.window,
+                (35, 35, 35),
+                (
+                    self.skip_button.outline_rect[0] + 4,
+                    self.skip_button.outline_rect[1] - 3,
+                    self.skip_button.outline_rect[2],
+                    self.skip_button.outline_rect[3],
+                ),
+                border_radius=2,
+            )
+            self.skip_button.draw(self.window)
+            pg.draw.rect(self.window, (0, 0, 0), self.skip_button.outline_rect, border_radius=2, width=2)
+            self.slider.draw(self.window)
+        # ---------------------------
+
         self.display_loading()
         pg.display.flip()
 

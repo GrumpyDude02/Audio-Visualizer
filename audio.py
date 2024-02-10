@@ -1,12 +1,6 @@
-import threading, time, pyaudio
-import numpy as np
-import pygame as pg
-import soundfile as sf
-import globals as gp
-from Bar import Bar
+import threading, time, pyaudio, numpy as np, soundfile as sf, globals as gp
 from scipy.fft import fft
 from scipy.signal.windows import hann
-
 
 # TODO: replace audio backend from pg.mixer to pyaudio or pyminiaudio
 
@@ -17,10 +11,11 @@ class AudioFileTypeError(Exception):
 
 
 class AudioFile:  # struct everything should be public
-    IDLE = 0
-    PLAYING = 1
-    PAUSED = 2
-    FINISHED = 3
+    IDLE = "IDLE"
+    PLAYING = "PLAYING"
+    PAUSED = "PAUSED"
+    SEEKING = "SEEKING"
+    FINISHED = "FINISHED"
 
     def __init__(self, filepath: str, fft_size):
         try:
@@ -28,13 +23,15 @@ class AudioFile:  # struct everything should be public
             self.filepath = filepath
             self.file = sf.SoundFile(filepath)
             self.state = AudioFile.IDLE
-
+            info = sf.info(filepath)
+            self.format = info.format
+            self.duration = info.duration
             self.sample_rate = self.file.samplerate
             self.channels = self.file.channels
             self.stream: pyaudio.Stream = None
             self.cache = None
             self.fft_size = fft_size
-
+            self.samples_passed = 0
             self.chunks_queue = []
             print(f"loaded in:{time.perf_counter()-t}")
 
@@ -59,37 +56,49 @@ class AudioFile:  # struct everything should be public
         self.state = AudioFile.PLAYING
         return 0
 
+    def seek_to(self, seconds: float):
+        self.samples_passed = seconds * self.sample_rate
+        self.file.seek(int(seconds * self.sample_rate))
+
+    def get_pos(self):
+        """returns time pass from a song in seconds"""
+        return int(self.samples_passed / self.sample_rate)
+
     def toggle_pause(self):
         if self.state == AudioFile.PLAYING:
             self.state = AudioFile.PAUSED
-            # self.stream.stop_stream()
         elif self.state == AudioFile.PAUSED:
             self.state = AudioFile.PLAYING
-            # self.stream.start_stream()
 
     def stop(self):
         self.stream.stop_stream()
         self.stream.close()
         self.state = AudioFile.FINISHED
+        self.file.close()
         print("terminated")
 
 
 class AudioManager:
 
-    def __init__(self, app, fft_size: int = 2048, sample_rate: int = 44100):
+    NONE = "NONE"
+    SKIP = "SKIP"
+    QUEUE_FULL = "QUEUE_FULL"
+    QUEUE_EMPTY = "QUEUE_EMPTY"
+
+    def __init__(self, app, fft_size: int = 2048, sample_rate: int = 44100, bands_number: int = None):
         self.app = app
         self.lock = threading.Lock()
+        self.seeking_lock = threading.Lock()
         self.audio_queue = []
         self.current: AudioFile = None
         self.fft_size = fft_size
         self.sample_rate = sample_rate
         self.hanning_window = hann(fft_size)
         self.bars = None
-        self.bar_width = None
-        self.usable_freq_indexes = None
         self.num_averages = 0
+        self.amps = [0 for _ in range(self.fft_size // 2)]
         self.loader = pyaudio.PyAudio()
-        self.init_bars()
+        self.update_timeline = True
 
     def add(self, filepath):
         try:
@@ -100,71 +109,50 @@ class AudioManager:
         except AudioFileTypeError:
             return False
 
-    def update_queue(self):
+    def update_queue(self, pause_button, skip_button):
         if self.lock.acquire(blocking=False):
             try:
                 if self.current is not None and self.current.state != AudioFile.FINISHED:
-                    return
+                    return None
 
                 if self.current is not None and self.current.state == AudioFile.FINISHED:
                     self.current.stop()
 
                 if len(self.audio_queue) == 0:
                     self.current = None
-                    return
+                    skip_button.update(self.get_queue_state())
+                    return None
 
+                skip_button.update(self.get_queue_state())
                 self.current = self.audio_queue.pop(0)
                 stream = self.current.open_stream_output(self.loader, self.callback_func)
                 self.current.start(stream)
-
+                pause_button.update(self.get_audio_state())
+                return self.current.duration
             finally:
                 self.lock.release()
 
-    def init_bars(self):
-        step = 1.06
-        konst = 1
-        f = 1
-        i = 0
-        self.usable_freq_indexes = [i]
-        bands = np.fft.fftfreq(n=self.fft_size, d=1 / self.sample_rate)
-        self.fft_bins = bands[: len(bands) // 2]
+    def get_usable_freq(self, bands_number: int = None) -> dict:
+        usable_freq_indexes = []
+
+        usable_range = self.fft_size // 2
+        if bands_number is not None:
+            step = (gp.end_frequency / gp.start_frequency) ** (1 / bands_number)
+            curr_freq = gp.start_frequency
+        else:
+            step = 1.06
+            curr_freq = 1
+        frequencies = []
         while True:
-            konst *= step
-            next_freq = f * konst
-            i = int(next_freq * self.fft_size / self.sample_rate)
-            if i > len(self.fft_bins):
+            index = int(curr_freq * self.fft_size / self.sample_rate)
+            if index > usable_range:
                 break
-            self.usable_freq_indexes.append(i)
+            usable_freq_indexes.append(index)
+            frequencies.append(curr_freq)
+            curr_freq *= step
 
-        self.usable_freq_indexes = sorted(set(self.usable_freq_indexes))
-
-        self.bar_width = min(gp.min_bar_width, max(self.app.width / (len(self.usable_freq_indexes)), 2))
-        self.amps = [0 for _ in range(len(self.fft_bins))]
-        offset = (self.app.width - self.bar_width * len(self.usable_freq_indexes)) // 2
-        l = len(self.usable_freq_indexes) - 1
-        self.bars = [
-            Bar(
-                {
-                    "frequencies": self.fft_bins[self.usable_freq_indexes[i] : self.usable_freq_indexes[min(i + 1, l)]],
-                    "index_range": (self.usable_freq_indexes[i], self.usable_freq_indexes[min(i + 1, l)]),
-                },
-                (100, 0),
-                (255, 0, 0),
-            )
-            for i in range(len(self.usable_freq_indexes))
-        ]
-        for i in range(len(self.bars)):
-            self.bars[i].pos = (i * self.bar_width + offset, self.app.height // 2)
-
-    def resize(self):
-        if not self.usable_freq_indexes:
-            return
-
-        self.bar_width = min(gp.min_bar_width, max(self.app.width / (len(self.usable_freq_indexes)), 2))
-
-        offset = (self.app.width - self.bar_width * len(self.usable_freq_indexes)) // 2
-        for i in range(len(self.bars)):
-            self.bars[i].pos = (i * self.bar_width + offset, self.app.height // 2)
+        usable_freq_indexes = sorted(set(usable_freq_indexes))
+        return {"frequencies": frequencies, "indexes": usable_freq_indexes}
 
     def empty_queue(self):
         if self.current is None or len(self.audio_queue) == 0:
@@ -180,21 +168,20 @@ class AudioManager:
         if self.current is not None:
             self.current.toggle_pause()
 
-    def draw_bars(self, window):
-        if self.bars is None:
-            return
-        for bar in self.bars:
-            bar.draw(window, self.bar_width - 1)
-
     def callback_func(self, in_data, frame_count, time_info, status):
-        if self.current.state == AudioFile.PAUSED:
+
+        if (
+            (self.update_timeline[1] or self.current.state == AudioFile.PAUSED) and not self.update_timeline[0]
+        ) or not self.seeking_lock.acquire(blocking=False):
             return (np.zeros((frame_count, self.current.channels), dtype=np.int16), pyaudio.paContinue)
 
         data = self.current.file.read(frames=frame_count, dtype=gp.dtype)
+        self.current.samples_passed += frame_count
         data_len = len(data)
 
         if data_len == 0:
             self.current.state = AudioFile.FINISHED
+            self.seeking_lock.release()
             return (None, pyaudio.paComplete)
 
         if data_len < self.fft_size:
@@ -217,12 +204,42 @@ class AudioManager:
             self.amps *= 0
         else:
             self.amps /= m
+        self.seeking_lock.release()
+
         return (data, pyaudio.paContinue)
 
-    def update(self):
-        self.update_queue()
-        for i in range(len(self.bars)):
-            self.bars[i].update(self.amps, self.app.dt, self.app.bar_min_height, self.app.bar_max_height)
+    def get_audio_state(self):
+        if self.current is None:
+            return AudioManager.NONE
+        print(self.current.state)
+        return self.current.state
+
+    def set_audio_state(self, state):
+        if self.current is None or state is AudioManager.NONE:
+            return
+        self.current.state = state
+
+    def get_current_audio_pos(self):
+        if self.current is None:
+            return None
+        return self.current.get_pos()
+
+    def set_pos(self, seconds: float):
+        if self.current is None:
+            return -1
+        if self.seeking_lock.acquire(blocking=True):
+            try:
+                self.current.seek_to(seconds)
+            finally:
+                self.seeking_lock.release()
+                return 0
+        return -2
+
+    def get_queue_state(self):
+        return AudioManager.QUEUE_EMPTY if (len(self.audio_queue) == 0 and self.current is None) else AudioManager.QUEUE_FULL
+
+    def get_amps(self):
+        return self.amps
 
     def terminate(self):
         if self.current is not None and self.current.stream is not None:
