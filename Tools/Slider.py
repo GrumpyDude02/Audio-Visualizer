@@ -36,7 +36,7 @@ class Slider:
             self.size[0] * sc_size[0],
             self.size[1] * sc_size[1],
         )
-        button_size = (max(self.rectangle_bar.width * 0.04, 10), max(self.rectangle_bar.height * 1.5, 30))
+        button_size = (max(self.rectangle_bar.width * 0.025, 10), max(self.rectangle_bar.height * 1.3, 30))
 
         button_position = (
             self.rectangle_bar.left - self.rectangle_bar.width * 0.04 / 2,
@@ -123,17 +123,8 @@ class Slider:
                 self.template.outline_color,
                 self.button_outline,
                 border_radius=self.template.outline_radius,
-                width=self.template.outline_size,
             )
         pygame.draw.rect(surface, self.button_color, self.button_rect, border_radius=self.template.border_radius)
-        # surface.blit(
-        #     output,
-        #     (self.rectangle_bar.left + self.rectangle_bar.width + 10, cy),
-        # )
-        # surface.blit(
-        #     self.rendered_text,
-        #     self.text_position,
-        # )
 
 
 class ValueSlider(Slider):
@@ -198,8 +189,8 @@ class TimeSlider(Slider):
 
     def resize(self, sc_size, font: pygame.font.Font):
         self.font = font
-        self.set_range(self.range)
         super().set_size(sc_size)
+        self.set_range(self.range)
 
     def set_range(self, time_range: tuple | list):
         self.range = time_range

@@ -127,7 +127,7 @@ class Application:
                 },
                 (100, 0),
                 gp.bar_color,
-                (225, 241, 255),
+                (235, 251, 255),
             )
             for i in range(len(self.indexes))
         ]
@@ -225,18 +225,16 @@ class Application:
         t = time.time() * 1000
         if t - self.last_update_time >= 1500 and not self.control_bar_rect.collidepoint(pg.mouse.get_pos()):
             self.show_control_bar = False
-
-        if self.show_control_bar and self.control_bar_rect.top >= self.rect_target_pos[1]:
+        v = 0
+        if self.show_control_bar:
             self.am.update_timeline = self.slider.update()
             if self.am.update_timeline[0]:
                 self.am.set_pos(self.slider.output)
             v = (self.control_bar_rect.top - self.rect_target_pos[1]) * self.dt * self.dt * 250
-            k = (self.bars[0].pos[1] - self.target_bars_height) * self.dt * self.dt * 250
-        elif self.control_bar_rect.top <= self.rect_lower_pos[1]:
+            k = (self.bars[0].pos[1] - self.target_bars_height) * self.dt * self.dt * 450
+        elif self.control_bar_rect.top <= self.rect_lower_pos[1] * 0.979:
             v = (self.control_bar_rect.top - self.rect_lower_pos[1]) * self.dt * self.dt * 250
-            k = (self.bars[0].pos[1] - self.upper_bars_height) * self.dt * self.dt * 250
-        else:
-            v = 0
+            k = (self.bars[0].pos[1] - self.upper_bars_height) * self.dt * self.dt * 450
         if v != 0:
             for bar in self.bars:
                 bar.pos = (bar.pos[0], (bar.pos[1] - k))
@@ -265,15 +263,16 @@ class Application:
                 self.window,
                 (35, 35, 35),
                 (
-                    self.control_bar_rect[0] + 3,
-                    self.control_bar_rect[1] - 3,
-                    self.control_bar_rect[2],
+                    self.control_bar_rect[0] + 8,
+                    self.control_bar_rect[1] - 4,
+                    self.control_bar_rect[2] - 4,
                     self.control_bar_rect[3],
                 ),
                 border_radius=4,
             )
             pg.draw.rect(self.window, (200, 200, 200), self.control_bar_rect, border_radius=4)
-            pg.draw.rect(self.window, (0, 0, 0), self.control_bar_rect, border_radius=4, width=2)
+            pg.draw.rect(self.window, (160, 160, 160), self.control_bar_rect, border_radius=4, width=6)
+            pg.draw.rect(self.window, (0, 0, 0), self.control_bar_rect, border_radius=4, width=3)
             pg.draw.rect(
                 self.window,
                 (35, 35, 35),
@@ -303,7 +302,6 @@ class Application:
             pg.draw.rect(self.window, (0, 0, 0), self.skip_button.outline_rect, border_radius=2, width=2)
             self.slider.draw(self.window)
         # ---------------------------
-
         self.display_loading()
         pg.display.flip()
 
