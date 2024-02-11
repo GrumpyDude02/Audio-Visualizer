@@ -38,12 +38,9 @@ class Slider:
         )
         button_size = (max(self.rectangle_bar.width * 0.025, 10), max(self.rectangle_bar.height * 1.3, 30))
 
-        button_position = (
-            self.rectangle_bar.left - self.rectangle_bar.width * 0.04 / 2,
-            self.rectangle_bar.centery - self.rectangle_bar.height * 1.5 / 2 - 1,
-        )
+        button_position = (0, 0)
         self.button_rect = pygame.Rect(button_position, button_size)
-
+        self.button_rect.center = (self.rectangle_bar.left, self.rectangle_bar.centery)
         self.button_outline = (
             pygame.Rect(
                 self.button_rect.left - self.template.outline_size,
@@ -223,6 +220,6 @@ class TimeSlider(Slider):
         elapsed_time_rect = elapsed_time.get_rect(center=self.rectangle_bar.center)
 
         surface.blit(
-            elapsed_time, (self.rectangle_bar.x - elapsed_time_rect.width - self.button_rect.width, elapsed_time_rect.y + 1)
+            elapsed_time, (self.rectangle_bar.x - elapsed_time_rect.width - self.button_rect.width, elapsed_time_rect.y)
         )
         surface.blit(max_time, (self.rectangle_bar.x + self.rectangle_bar.width + self.button_rect.w, max_time_rect.y))

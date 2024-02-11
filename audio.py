@@ -205,14 +205,16 @@ class AudioManager:
         else:
             self.amps /= m
         self.seeking_lock.release()
+        if self.update_timeline[0]:
+            return (np.zeros((frame_count, self.current.channels), dtype=np.int16), pyaudio.paContinue)
 
         return (data, pyaudio.paContinue)
 
     def get_audio_state(self):
-        if self.current is None:
-            return AudioManager.NONE
-        print(self.current.state)
-        return self.current.state
+        return AudioManager.NONE if self.current is None else self.current.state
+
+    def get_audio_duration(self):
+        return 0 if self.current is None else self.current.duration
 
     def set_audio_state(self, state):
         if self.current is None or state is AudioManager.NONE:
@@ -220,9 +222,7 @@ class AudioManager:
         self.current.state = state
 
     def get_current_audio_pos(self):
-        if self.current is None:
-            return None
-        return self.current.get_pos()
+        return 0 if self.current is None else self.current.get_pos()
 
     def set_pos(self, seconds: float):
         if self.current is None:

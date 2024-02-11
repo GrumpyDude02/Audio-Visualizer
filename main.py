@@ -2,7 +2,7 @@ import sys, threading, time
 import pygame as pg
 import globals as gp
 from audio import AudioManager, AudioFile
-from Bar import Bar
+from Bar import Bar, SplitBars
 from Tools.Buttons import ToggleButtons, ButtonTemplate
 import Tools.Slider as sl
 from math import ceil
@@ -15,7 +15,7 @@ ToggleTemplate = ButtonTemplate(
 
 slider_template = ButtonTemplate((0, 0, 0), (255, 165, 0), (200, 200, 200), (20, 20, 20), 2, 3, 2, (20, 20, 20), 5, -1, None)
 
-bluish_grey = (54, 69, 79)
+bluish_grey = (14, 29, 39)
 
 toggle_button_size = (0.05, 0.1)
 toggle_button_pos = (0.5 - toggle_button_size[0] / 2, 1.07)
@@ -34,12 +34,23 @@ def time_format(time: int) -> str:
 
 
 class Application:
-    def __init__(self, font_size, fps, size, resizable: bool, name: str, min_size: tuple = [100, 100]):
+
+    def __init__(
+        self,
+        font_path: str,
+        font_size,
+        fps,
+        size,
+        resizable: bool,
+        name: str,
+        min_size: tuple = [100, 100],
+        style="WhiteBars",
+    ):
         pg.init()
         pg.mixer.init()
 
         self.display_loading_lock = threading.Lock()
-
+        self.style = style
         self.fps = fps
         self.dt = 1 / (self.fps + 1e-16)
         self.width = size[0]
@@ -64,22 +75,21 @@ class Application:
         self.font_size = int(
             self.base_font_size * min(self.width / gp.base_resolution[0], self.height / gp.base_resolution[1])
         )
-        self.font = pg.font.SysFont("Arial", self.font_size)
-
+        self.init_font(font_size, font_path, False)
+        self.font_path = font_path
         self.bar_min_height = int(self.height * 0.01)
         self.bar_max_height = self.height
         self.bar_width = None
-        self.init_bars()
+        self.init_bars(style=self.style)
+        self.calculate_pos(self.width, self.height, self.style)
 
         self.images = {
-            AudioFile.PAUSED: pg.image.load("images/play.png").convert_alpha(),
-            AudioFile.PLAYING: pg.image.load("images/pause.png").convert_alpha(),
-            AudioManager.QUEUE_FULL: pg.image.load("images/skip_to_end.png").convert_alpha(),
-            AudioManager.QUEUE_EMPTY: pg.image.load("images/skip_to_end.png").convert_alpha(),
+            AudioFile.PAUSED: pg.image.load("Assets/images/play.png").convert_alpha(),
+            AudioFile.PLAYING: pg.image.load("Assets/images/pause.png").convert_alpha(),
+            AudioManager.QUEUE_FULL: pg.image.load("Assets/images/skip_to_end.png").convert_alpha(),
+            AudioManager.QUEUE_EMPTY: pg.image.load("Assets/images/skip_to_end.png").convert_alpha(),
         }
         fill(self.images[AudioManager.QUEUE_EMPTY], (150, 150, 150, 255))
-
-        self.calculate_pos(self.width, self.height)
 
         self.play_pause_toggle = ToggleButtons(
             self.images,
@@ -109,8 +119,9 @@ class Application:
 
         self.show_control_bar = False
 
-    def init_bars(self, bars_number: int = None):
-
+    def init_bars(self, style, bars_number: int = None):
+        if style == "RectBars" and bars_number == None:
+            bars_number = 31
         dic = self.am.get_usable_freq(bars_number)
         frequencies = dic["frequencies"]
         self.indexes = dic["indexes"]
@@ -119,22 +130,38 @@ class Application:
         self.bar_width = min(gp.min_bar_width, max(self.width / (l + 1), 2))
 
         offset = (self.width - self.bar_width * (l + 1)) // 2
-        self.bars = [
-            Bar(
-                {
-                    "frequencies": (frequencies[self.indexes[i] : self.indexes[min(i + 1, l)]]),
-                    "index_range": (self.indexes[i], self.indexes[min(i + 1, l)]),
-                },
-                (100, 0),
-                gp.bar_color,
-                (235, 251, 255),
-            )
-            for i in range(len(self.indexes))
-        ]
+        self.bars = (
+            [
+                Bar(
+                    {
+                        "frequencies": (frequencies[self.indexes[i] : self.indexes[min(i + 1, l)]]),
+                        "index_range": (self.indexes[i], self.indexes[min(i + 1, l)]),
+                    },
+                    (100, 0),
+                    gp.bar_color,
+                    (185, 191, 215),
+                )
+                for i in range(len(self.indexes))
+            ]
+            if style == "WhiteBars"
+            else [
+                SplitBars(
+                    {
+                        "frequencies": (frequencies[self.indexes[i] : self.indexes[min(i + 1, l)]]),
+                        "index_range": (self.indexes[i], self.indexes[min(i + 1, l)]),
+                    },
+                    (100, 0),
+                    gp.bar_color,
+                    (235, 251, 255),
+                )
+                for i in range(len(self.indexes))
+            ]
+        )
+
         for i in range(len(self.bars)):
             self.bars[i].pos = (i * self.bar_width + offset, self.height // 2)
 
-    def calculate_pos(self, width, height):
+    def calculate_pos(self, width, height, style):
         self.rect_target_pos = (width * 0.1, height * 0.75)
         self.rect_lower_pos = (width * 0.1, height * 1.04)
         self.control_bar_rect = pg.Rect(
@@ -143,17 +170,32 @@ class Application:
             width * 0.80,
             height * 0.4,
         )
-        self.upper_bars_height = height // 2
-        self.target_bars_height = height * 0.35
+        SplitBars.scale = Bar.scale = self.height // 2
+        SplitBars.rect_height = self.height * 0.025
+        print(SplitBars.rect_height)
+        if style == "WhiteBars":
+            self.upper_bars_height = height // 2
+            self.target_bars_height = height * 0.35
+        else:
+            self.upper_bars_height = height * 0.85
+            self.target_bars_height = height * 0.65
+
+    def init_font(self, font_size, font_path: str, bold: bool = False):
+        try:
+            self.font = pg.font.Font(font_path, font_size)
+        except FileNotFoundError:
+            self.font = pg.font.SysFont("Arial Black", size=font_size)
+        self.font.set_bold(bold)
 
     def resize(self, n_size: tuple):
         scale_x = n_size[0] / gp.base_resolution[0]
         scale_y = n_size[1] / gp.base_resolution[1]
         self.width = n_size[0]
         self.height = n_size[1]
-        self.calculate_pos(self.width, self.height)
+        self.calculate_pos(self.width, self.height, self.style)
         self.font_size = int(self.base_font_size * min(scale_x, scale_y))
-        self.font = pg.font.SysFont("Arial", self.font_size)
+        self.init_font(self.font_size, self.font_path, False)
+
         if not self.indexes:
             return
         self.bar_width = min(gp.min_bar_width, max(self.width / (len(self.indexes)), 2))
@@ -189,9 +231,17 @@ class Application:
             if event.type == pg.KEYDOWN:
                 if event.key == pg.K_n:
                     self.am.skip()
-                if event.key == pg.K_p:
+                if event.key in (pg.K_p, pg.K_SPACE):
                     self.am.toggle_pause()
                     self.play_pause_toggle.update(self.am.get_audio_state())
+                if event.key == pg.K_LEFT:
+                    current = self.am.get_current_audio_pos()
+                    duration = self.am.get_audio_duration()
+                    self.am.set_pos(min(duration, max(current - 10, 0)))
+                if event.key == pg.K_RIGHT:
+                    current = self.am.get_current_audio_pos()
+                    duration = self.am.get_audio_duration()
+                    self.am.set_pos(min(duration, max(current + 10, 0)))
                 if event.key == pg.K_s:
                     self.am.set_pos(50)
             if event.type == pg.MOUSEMOTION:
@@ -261,7 +311,7 @@ class Application:
         if self.control_bar_rect.top < self.height:
             pg.draw.rect(
                 self.window,
-                (35, 35, 35),
+                (15, 15, 15),
                 (
                     self.control_bar_rect[0] + 8,
                     self.control_bar_rect[1] - 4,
@@ -314,5 +364,5 @@ class Application:
 
 if __name__ == "__main__":
     # main()
-    app = Application(20, 60, (gp.WIDTH, gp.HEIGHT), True, "Audio Visualizer")
+    app = Application("Assets/Fonts/PixCon.ttf", 12, 60, (gp.WIDTH, gp.HEIGHT), True, "Audio Visualizer", style="RectBars")
     app.run()
