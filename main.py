@@ -139,7 +139,7 @@ class Application:
                     },
                     (100, 0),
                     gp.bar_color,
-                    (185, 191, 215),
+                    (215, 231, 235),
                 )
                 for i in range(len(self.indexes))
             ]
@@ -364,5 +364,5 @@ class Application:
 
 if __name__ == "__main__":
     # main()
-    app = Application("Assets/Fonts/PixCon.ttf", 12, 60, (gp.WIDTH, gp.HEIGHT), True, "Audio Visualizer", style="RectBars")
+    app = Application("Assets/Fonts/PixCon.ttf", 12, 60, (gp.WIDTH, gp.HEIGHT), True, "Audio Visualizer", style="WhiteBars")
     app.run()
