@@ -1,11 +1,10 @@
-import sys, threading, time
+import sys, threading, time, enum
 import pygame as pg
 import globals as gp
-from audio import AudioManager, AudioFile
-from Bar import Bar, SplitBars
-from Tools.Buttons import ToggleButtons, ButtonTemplate
+from audio import AudioManager, AudioFile, get_default_output_device
+from Bar import Bar, SoundMeterBar
+from Tools.Buttons import ToggleButtons, ButtonTemplate, Buttons
 import Tools.Slider as sl
-from math import ceil
 from Tools.functions import fill
 
 
@@ -26,6 +25,20 @@ skip_button_pos = (0.58, 1.08)
 slider_pos = (0.3, 1.214)
 slider_size = (0.4, 0.025)
 
+white_bars_target_pos = 0.5
+white_bars_upper_pos = 0.35
+white_bars_scale_perc = 0.6
+
+soundmeter_rect_height = 0.025
+soundmeter_scale_perc = 0.85
+soundmeter_bars_upper_pos = 0.74
+soundmeter_bars_target_pos = 1
+
+control_bar_height = 0.4
+
+
+smoothing_speed = 5
+
 
 def time_format(time: int) -> str:
     t = int(time)
@@ -34,6 +47,11 @@ def time_format(time: int) -> str:
 
 
 class Application:
+
+    class Styles(enum.Enum):
+        WhiteBars = "WhiteBars"
+        MinimalistSoundMeter = "MinimalistSoundMeter"
+        SoundMeter = "MinimalistSoundMeter"
 
     def __init__(
         self,
@@ -47,9 +65,6 @@ class Application:
         style="WhiteBars",
     ):
         pg.init()
-        pg.mixer.init()
-
-        self.display_loading_lock = threading.Lock()
         self.style = style
         self.fps = fps
         self.dt = 1 / (self.fps + 1e-16)
@@ -68,8 +83,15 @@ class Application:
         pg.display.set_caption(name)
         self.clock = pg.time.Clock()
         self.am = AudioManager(self, fft_size=gp.fft_size, bands_number=gp.bands_number)
-        self.audio_loader_threads = []
-        self.thread_limit = 50
+        self.files_queue = []
+        self.temp_queue = []
+
+        self.display_loading_lock = threading.Lock()
+        self.reading_from_queue_lock = threading.Lock()
+        self.audio_loader_thread = threading.Thread(target=self.add_file)
+        self.audio_loader_thread.daemon = True
+        self.audio_loader_thread.start()
+
         self.min_size = min_size
         self.base_font_size = font_size
         self.font_size = int(
@@ -112,12 +134,12 @@ class Application:
             scale=0.5,
         )
 
-        # self.slider = Slider(slider_template, slider_pos, slider_size, None, (self.width, self.height))
         self.slider = sl.TimeSlider(
             slider_template, slider_pos, slider_size, self.font, time_format, [0, 1], (self.width, self.height)
         )
-
         self.show_control_bar = False
+        self.show_settings_bar = False
+        self.running = True
 
     def init_bars(self, style, bars_number: int = None):
         if style == "RectBars" and bars_number == None:
@@ -137,7 +159,7 @@ class Application:
                         "frequencies": (frequencies[self.indexes[i] : self.indexes[min(i + 1, l)]]),
                         "index_range": (self.indexes[i], self.indexes[min(i + 1, l)]),
                     },
-                    (100, 0),
+                    (i * self.bar_width + offset, self.height),
                     gp.bar_color,
                     (215, 231, 235),
                 )
@@ -145,40 +167,38 @@ class Application:
             ]
             if style == "WhiteBars"
             else [
-                SplitBars(
+                SoundMeterBar(
                     {
                         "frequencies": (frequencies[self.indexes[i] : self.indexes[min(i + 1, l)]]),
                         "index_range": (self.indexes[i], self.indexes[min(i + 1, l)]),
                     },
-                    (100, 0),
-                    gp.bar_color,
-                    (235, 251, 255),
+                    (i * self.bar_width + offset, self.height),
                 )
                 for i in range(len(self.indexes))
             ]
         )
 
-        for i in range(len(self.bars)):
-            self.bars[i].pos = (i * self.bar_width + offset, self.height // 2)
-
     def calculate_pos(self, width, height, style):
-        self.rect_target_pos = (width * 0.1, height * 0.75)
-        self.rect_lower_pos = (width * 0.1, height * 1.04)
+        SoundMeterBar.calculate_class_dim(
+            self.height * soundmeter_rect_height, self.height * soundmeter_scale_perc, self.height
+        )
+        self.rect_target_pos = (0, height * 0.75)
+        self.rect_lower_pos = (0, height * 1.04)
         self.control_bar_rect = pg.Rect(
             self.rect_lower_pos[0],
             self.rect_lower_pos[1],
-            width * 0.80,
-            height * 0.4,
+            width,
+            height * control_bar_height,
         )
-        SplitBars.scale = Bar.scale = self.height // 2
-        SplitBars.rect_height = self.height * 0.025
-        print(SplitBars.rect_height)
+
+        Bar.scale = self.height * white_bars_scale_perc
+
         if style == "WhiteBars":
-            self.upper_bars_height = height // 2
-            self.target_bars_height = height * 0.35
+            self.target_bars_height = height * white_bars_target_pos
+            self.upper_bars_height = height * white_bars_upper_pos
         else:
-            self.upper_bars_height = height * 0.85
-            self.target_bars_height = height * 0.65
+            self.upper_bars_height = height * soundmeter_bars_upper_pos
+            self.target_bars_height = height * soundmeter_bars_target_pos
 
     def init_font(self, font_size, font_path: str, bold: bool = False):
         try:
@@ -207,27 +227,24 @@ class Application:
         self.skip_button.resize(self.images, (self.width, self.height), self.am.get_queue_state())
         self.slider.resize((self.width, self.height), self.font)
 
-    def add_file(self, filepath):
-        if len(self.audio_loader_threads) < self.thread_limit:
-            self.audio_loader_threads.append(threading.Thread(target=self.am.add, args=[filepath]))
-            self.audio_loader_threads[-1].start()
-
     def display_loading(self):
-        if len(self.audio_loader_threads) > 0:
-            rect = pg.Rect(self.width * 0.05, self.height * 0.05, self.width * 0.2, self.height * 0.15)
-            pos = (rect.center[0], rect.center[1])
-            text_render = self.font.render("Loading file...", color=(255, 255, 255), antialias=True)
-            pg.draw.rect(self.window, (0, 0, 0), rect, border_radius=8)
-            pg.draw.rect(self.window, (255, 255, 255), rect, 5, border_radius=8)
-            pos = text_render.get_rect(center=pos)
-            self.window.blit(text_render, pos)
+        rect = pg.Rect(self.width * 0.05, self.height * 0.05, self.width * 0.2, self.height * 0.15)
+        pos = (rect.center[0], rect.center[1])
+        text_render = self.font.render("Loading file...", color=(255, 255, 255), antialias=True)
+        pg.draw.rect(self.window, (0, 0, 0), rect, border_radius=8)
+        pg.draw.rect(self.window, (255, 255, 255), rect, 5, border_radius=8)
+        pos = text_render.get_rect(center=pos)
+        self.window.blit(text_render, pos)
+
+    def add_file(self):
+        with self.reading_from_queue_lock:
+            while self.files_queue:
+                self.am.add(self.files_queue.pop(0))
 
     def handle_events(self):
         for event in pg.event.get():
             if event.type == pg.QUIT:
-                self.am.terminate()
-                pg.quit()
-                sys.exit()
+                self.running = False
             if event.type == pg.KEYDOWN:
                 if event.key == pg.K_n:
                     self.am.skip()
@@ -251,7 +268,17 @@ class Application:
             if event.type == pg.VIDEORESIZE:
                 self.resize(event.size)
             if event.type == pg.DROPFILE:
-                self.add_file(event.file)
+                self.temp_queue.append(event.file)
+
+        if self.reading_from_queue_lock.acquire(blocking=False):
+            self.files_queue += self.temp_queue
+            self.temp_queue.clear()
+            self.reading_from_queue_lock.release()
+
+        if self.files_queue and not self.audio_loader_thread.is_alive():
+            self.audio_loader_thread = threading.Thread(target=self.add_file)
+            self.audio_loader_thread.daemon = True
+            self.audio_loader_thread.start()
 
         if self.play_pause_toggle.check_input():
             self.am.toggle_pause()
@@ -262,32 +289,35 @@ class Application:
             self.am.skip()
 
     def update(self):
-        for thread in self.audio_loader_threads:
-            if not thread.is_alive():
-                self.audio_loader_threads.remove(thread)
         self.play_pause_toggle.check_input()
-        current_song_time = self.am.update_queue(self.play_pause_toggle, self.skip_button)
+        current_song_time = self.am.update(self.play_pause_toggle, self.skip_button)
+
         if current_song_time is not None:
             self.slider.set_range((0, current_song_time))
 
         self.slider.update_elapsed_time(self.am.get_current_audio_pos())
 
         t = time.time() * 1000
-        if t - self.last_update_time >= 1500 and not self.control_bar_rect.collidepoint(pg.mouse.get_pos()):
+        if t - self.last_update_time >= 1500 and (
+            not self.control_bar_rect.collidepoint(pg.mouse.get_pos()) or not pg.mouse.get_focused()
+        ):
             self.show_control_bar = False
         v = 0
         if self.show_control_bar:
-            self.am.update_timeline = self.slider.update()
-            if self.am.update_timeline[0]:
+            slider_update_status = self.slider.update()
+            self.am.set_timeline_update_status(slider_update_status)
+            if slider_update_status[0]:
                 self.am.set_pos(self.slider.output)
-            v = (self.control_bar_rect.top - self.rect_target_pos[1]) * self.dt * self.dt * 250
-            k = (self.bars[0].pos[1] - self.target_bars_height) * self.dt * self.dt * 450
-        elif self.control_bar_rect.top <= self.rect_lower_pos[1] * 0.979:
-            v = (self.control_bar_rect.top - self.rect_lower_pos[1]) * self.dt * self.dt * 250
-            k = (self.bars[0].pos[1] - self.upper_bars_height) * self.dt * self.dt * 450
+            v = (self.control_bar_rect.top - self.rect_target_pos[1]) * self.dt * 6
+            k = (self.bars[0].pos[1] - self.upper_bars_height) * self.dt * 7
+        elif self.control_bar_rect.top <= self.rect_lower_pos[1] * 0.98:
+            v = (self.control_bar_rect.top - self.rect_lower_pos[1]) * self.dt * 6
+            k = (self.bars[0].pos[1] - self.target_bars_height) * self.dt * 7
         if v != 0:
             for bar in self.bars:
                 bar.pos = (bar.pos[0], (bar.pos[1] - k))
+            height = round(self.height - (self.height - self.control_bar_rect.top))
+            SoundMeterBar.calculate_class_dim(height * soundmeter_rect_height, height * soundmeter_scale_perc, height)
             self.control_bar_rect.top = self.control_bar_rect.top - v
             self.play_pause_toggle.outline_rect.top = self.play_pause_toggle.outline_rect.top - v
             self.play_pause_toggle.rectangle.top = self.play_pause_toggle.rectangle.top - v
@@ -352,14 +382,19 @@ class Application:
             pg.draw.rect(self.window, (0, 0, 0), self.skip_button.outline_rect, border_radius=2, width=2)
             self.slider.draw(self.window)
         # ---------------------------
-        self.display_loading()
+        # pg.draw.circle(self.window, (0, 255, 0), pg.mouse.get_pos(), 50)
+        if len(self.files_queue) > 0:
+            self.display_loading()
         pg.display.flip()
 
     def run(self):
-        while 1:
+        while self.running:
             self.handle_events()
             self.update()
             self.draw()
+        self.am.terminate()
+        pg.quit()
+        sys.exit()
 
 
 if __name__ == "__main__":
