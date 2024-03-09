@@ -36,7 +36,7 @@ class Slider:
             self.size[0] * sc_size[0],
             self.size[1] * sc_size[1],
         )
-        button_size = (max(self.rectangle_bar.width * 0.025, 10), max(self.rectangle_bar.height * 1.3, 30))
+        button_size = (max(self.rectangle_bar.width * 0.015, 10), max(self.rectangle_bar.height * 1.3, 30))
 
         button_position = (0, 0)
         self.button_rect = pygame.Rect(button_position, button_size)
@@ -191,7 +191,7 @@ class TimeSlider(Slider):
 
     def set_range(self, time_range: tuple | list):
         self.range = time_range
-        self.step = self.rectangle_bar.width / self.range[1]
+        self.step = self.rectangle_bar.width / self.range[1] if self.range[1] > 0 else 0
 
     def update_elapsed_time(self, time):
         if time is None:

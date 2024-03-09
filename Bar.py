@@ -27,7 +27,7 @@ class Bar:
         self.amplitude = fn.clamp(0, 1, self.amplitude)
         target_height = int(self.amplitude * Bar.scale)
 
-        self.color = fn.color_interpolation(self.original_color, self.target_color, 1 - (1 - self.amplitude) ** (0.85))
+        self.color = fn.color_interpolation(self.original_color, self.target_color, 1 - (1 - self.amplitude) ** 0.3)
         self.height = fn.clamp(
             min_height, max_height, self.height + (target_height - self.height) * dt * Bar.smoothing_scale
         )
@@ -51,7 +51,7 @@ class SoundMeterBar:
     @staticmethod
     def calculate_class_dim(rect_height, scale, window_height):
         SoundMeterBar.rect_height = rect_height
-        SoundMeterBar.rects_number = window_height / rect_height
+        SoundMeterBar.rects_number = round(window_height / rect_height)
         SoundMeterBar.scale = scale
         SoundMeterBar.step = len(SoundMeterBar.color_pallet) / (SoundMeterBar.scale / SoundMeterBar.rect_height)
 
@@ -87,7 +87,7 @@ class SoundMeterBar:
         y = self.pos[1] - (SoundMeterBar.rect_height * self.max)
         h = SoundMeterBar.rect_height - 1
         w = width
-        for i in range(1, round(SoundMeterBar.rects_number)):
+        for i in range(1, SoundMeterBar.rects_number):
             gfxdraw.box(
                 window,
                 (x, self.pos[1] - (SoundMeterBar.rect_height * i), w, h),

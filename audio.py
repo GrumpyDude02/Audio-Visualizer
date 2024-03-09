@@ -40,30 +40,20 @@ class AudioFile:  # struct everything should be public
     }
 
     @staticmethod
-    def get_flac_data(filepath):
-        audio_data = {}
+    def get_flac_img(filepath):
         audio = FLAC(filepath)
         for p in audio.pictures:
             if p.type == 3:
-                audio_data["cover"] = p.data
-        for tag in audio.tags.keys():
-            audio_data[tag] = audio.tags[tag]
-        return audio_data
+                return p.data
+        return None
 
     @staticmethod
-    def get_mp3_data(filepath):
-        audio_data = {}
+    def get_mp3_img(filepath):
         audio = MP3(filepath)
         for t in list(audio.tags.keys()):
             if "APIC" in t:
-                audio_data["cover"] = audio.tags[t].data
-            else:
-                k = AudioFile.mp3_tag_to_flac_tag.get(t)
-                if k is not None:
-                    audio_data[k] = audio.tags[t].text
-
-        # print(audio_data["cover"])
-        return audio_data
+                return audio.tags[t].data
+        return None
 
     def __init__(self, filepath: str, fft_size):
         try:
@@ -73,27 +63,45 @@ class AudioFile:  # struct everything should be public
             self.state = AudioFile.IDLE
             info = sf.info(filepath)
             self.format = info.format
-            if self.format == "FLAC":
-                self.meta_data = AudioFile.get_flac_data(filepath)
-            elif self.format == "MP3":
-                self.meta_data = AudioFile.get_mp3_data(filepath)
-            img = self.meta_data.get("cover")
-            if img is not None:
-                self.image = pg.image.load(io.BytesIO(img))
+            self.meta_data = self.file.copy_metadata()
+            self.og_img = None
+            self.resized_img = None
             self.duration = info.duration
             self.sample_rate = self.file.samplerate
             self.channels = self.file.channels
             self.stream: pyaudio.Stream = None
-            self.cache = None
-            self.fft_size = fft_size
             self.samples_passed = 0
-            self.chunks_queue = []
+            self.fft_size = fft_size
             print(f"loaded in:{time.perf_counter()-t}")
 
         except Exception as e:
             print("Failed to load the file; An exception has accurred: ")
             print(e)
             raise AudioFileTypeError
+
+    def load_img(self):
+        if self.og_img is not None:
+            return 0
+        if self.format == "FLAC":
+            og_img = AudioFile.get_flac_img(self.filepath)
+        elif self.format == "MP3":
+            og_img = AudioFile.get_mp3_img(self.filepath)
+        try:
+            self.og_img = pg.image.load(io.BytesIO(og_img)).convert_alpha()
+            return 0
+        except pg.error:
+            self.og_img = None
+            return -1
+
+    def resize_img(self, size: tuple):
+        if self.load_img() == 0:
+            self.resized_img = pg.transform.smoothscale(self.og_img, size)
+
+    def get_resized_img(self):
+        return self.resized_img
+
+    def get_og_img(self):
+        return self.og_img
 
     def open_stream_output(self, loader: pyaudio.PyAudio, callback):
         return loader.open(
@@ -106,7 +114,7 @@ class AudioFile:  # struct everything should be public
             start=False,
         )
 
-    def start(self, stream):
+    def start(self, stream: pyaudio.Stream):
         self.stream = stream
         self.stream.start_stream()
         self.state = AudioFile.PLAYING
@@ -146,6 +154,11 @@ class AudioManager:
     QUEUE_FULL = "QUEUE_FULL"
     QUEUE_EMPTY = "QUEUE_EMPTY"
 
+    REACHED_END = 0
+    UPDATED = 1
+    PENDING = 2
+    ERROR = 3
+
     def __init__(self, app, fft_size: int = 2048, sample_rate: int = 44100, bands_number: int = None):
         self.app = app
         self.seeking_lock = threading.Lock()
@@ -164,20 +177,18 @@ class AudioManager:
         self.output_check_thread = threading.Thread(target=self.check_output_change)
         self.output_check_thread.daemon = True
         self.output_check_thread.start()
+        self.cache = {}
+        self.current_index = 0
 
     def init_pyaudio(self):
         self.loader = pyaudio.PyAudio()
         self.default_output_device = self.loader.get_default_output_device_info()["name"]
 
-    def add(self, filepath):
+    def add(self, filepaths):
         """should be called by another thread"""
-        try:
-            audio = AudioFile(filepath, self.fft_size)
-            with self.lock:
-                self.audio_queue.append(audio)
-            return True
-        except AudioFileTypeError:
-            return False
+        for filepath in filepaths:
+            self.audio_queue.append(filepath)
+        print(self.audio_queue)
 
     def check_output_change(self):
         while True:
@@ -188,28 +199,64 @@ class AudioManager:
                     self.current.start(self.current.open_stream_output(self.loader, self.callback_func))
             time.sleep(1)
 
-    def update(self, pause_button, skip_button):
-        if self.lock.acquire(blocking=False):
-            try:
-                if self.current is not None and self.current.state != AudioFile.FINISHED:
-                    return None
+    def get_audio_file(self, filepath) -> None | AudioFile:
+        try:
+            if self.cache.get(filepath) is None:
+                self.cache[filepath] = AudioFile(filepath, self.fft_size)
+        except AudioFileTypeError:
+            self.cache[filepath] = None
+        return self.cache[filepath]
 
-                if self.current is not None and self.current.state == AudioFile.FINISHED:
-                    self.current.terminate()
+    def del_audio_cache(self, filepath):
+        if self.cache.get(filepath) is not None:
+            del self.cache[filepath]
 
-                if len(self.audio_queue) == 0:
-                    self.current = None
-                    skip_button.update(self.get_queue_state())
-                    return None
+    def update(self, img_size):
+        if self.current is not None and self.current.state != AudioFile.FINISHED:
+            return 2
 
-                skip_button.update(self.get_queue_state())
-                self.current = self.audio_queue.pop(0)
-                stream = self.current.open_stream_output(self.loader, self.callback_func)
-                self.current.start(stream)
-                pause_button.update(self.get_audio_state())
-                return self.current.duration
-            finally:
-                self.lock.release()
+        if self.current is not None and self.current.state == AudioFile.FINISHED:
+            self.current.terminate()
+
+        if self.current_index == len(self.audio_queue):
+            self.current = None
+            return 0
+
+        if self.current_index > 0:
+            self.del_audio_cache(self.audio_queue[self.current_index - 1])
+
+        self.current = self.get_audio_file(self.audio_queue[self.current_index])
+        if self.current is None:
+            self.audio_queue.pop(self.current_index)
+            print("error loading file")
+            return 3
+        stream = self.current.open_stream_output(self.loader, self.callback_func)
+        self.current.start(stream)
+        self.current_index += 1
+        self.current.resize_img(img_size)
+        return 1
+
+    def get_buttons_state(self):
+        if self.current is not None:
+            duration = self.current.duration
+            cover = self.current.get_resized_img()
+            toggle = AudioFile.PLAYING
+        else:
+            duration = 0
+            cover = None
+            toggle = AudioFile.PAUSED
+        return {
+            "duration": duration,
+            "cover": cover,
+            "next": self.get_queue_state(),
+            "toggle": toggle,
+        }
+
+    def resize_preview(self, size):
+        if self.current is None:
+            return None
+        self.current.resize_img(size)
+        return self.current.get_resized_img()
 
     def empty_queue(self):
         if self.current is None or len(self.audio_queue) == 0:
@@ -219,6 +266,13 @@ class AudioManager:
     def skip(self):
         if self.current is not None:
             self.current.terminate()
+            self.amps = [0 for _ in range(self.fft_size)]
+
+    def previous(self):
+        if self.current is not None:
+            self.current.terminate()
+            self.del_audio_cache(self.audio_queue[self.current_index - 1])
+            self.current_index = max(self.current_index - 2, 0)
             self.amps = [0 for _ in range(self.fft_size)]
 
     def toggle_pause(self):
@@ -274,7 +328,7 @@ class AudioManager:
         return (default_device.FriendlyName, default_device.id)
 
     def get_queue_state(self):
-        return AudioManager.QUEUE_EMPTY if (len(self.audio_queue) == 1 and self.current is None) else AudioManager.QUEUE_FULL
+        return AudioManager.QUEUE_EMPTY if self.current_index == len(self.audio_queue) else AudioManager.QUEUE_FULL
 
     def get_amps(self):
         return self.amps
