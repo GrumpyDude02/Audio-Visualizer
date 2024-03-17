@@ -42,9 +42,10 @@ soundmeter_bars_upper_pos = 0.687
 soundmeter_bars_target_pos = 1
 
 
-song_info_pos = (0.15, 0.85)
-
 smoothing_speed = 5
+
+
+song_info_summary_pos = (0.135, 1.12)
 
 
 def time_format(time: int) -> str:
@@ -151,8 +152,7 @@ class Application:
         self.show_control_bar = False
         self.show_settings_bar = False
         self.running = True
-
-        self.rendered_text = {"song_name": None, "artist_name": None}
+        self.rendered_text = {"title": None, "artist_name": None}
 
     def init_bars(self, style, bars_number: int = None):
         if style == Styles.SoundMeter and bars_number == None:
@@ -217,6 +217,10 @@ class Application:
         self.place_holder_preview.blit(white_surf, (0, 0), special_flags=pg.BLEND_RGBA_MIN)
         center_pos = resized_no_image.get_rect(center=self.place_holder_preview.get_rect().center)
         self.place_holder_preview.blit(resized_no_image, center_pos)
+
+        self.song_info_summary_surf = pg.Surface((0.25 * self.width, 0.2 * self.height), pg.HWSURFACE | pg.SRCALPHA)
+        self.song_info_summary_surf.fill((0, 0, 0, 0))
+        self.song_summ_pos = [song_info_summary_pos[0] * self.width, song_info_summary_pos[1] * self.height]
 
         preview_img = self.am.resize_preview(self.preview_size)
         if preview_img is not None:
@@ -331,6 +335,8 @@ class Application:
             duration = update_dict["duration"]
             toggle_icon_key = update_dict["toggle"]
             next_icon_key = update_dict["next"]
+            self.rendered_text["artist"] = update_dict["artist"]
+            self.rendered_text["title"] = update_dict["title"]
             self.play_pause_toggle.update(toggle_icon_key)
             self.skip_button.update(next_icon_key)
             if preview_img is not None:
@@ -372,6 +378,7 @@ class Application:
             self.slider.button_outline.top = self.slider.button_outline.top - v
             self.slider.rectangle_bar.top = self.slider.rectangle_bar.top - v
             self.preview_pos = (self.preview_pos[0], int(self.preview_pos[1] - v))
+            self.song_summ_pos[1] = int(self.song_summ_pos[1] - v)
             height = self.height - (self.height - self.control_bar_rect.top)
             SoundMeterBar.calculate_class_dim(height * soundmeter_rect_height, height * soundmeter_scale_perc, height)
 
@@ -383,6 +390,7 @@ class Application:
 
     def draw(self):
         self.window.fill(bluish_grey)
+        self.song_info_summary_surf.fill((0, 0, 0, 0))
 
         # drawing control bar----------------------------
         if self.control_bar_rect.top < self.height:
@@ -471,6 +479,11 @@ class Application:
             bar.draw(self.window, self.bar_width - self.bar_spacing)
         if len(self.files_queue) > 0:
             self.display_loading()
+        title = self.font.render(self.rendered_text["title"], True, (0, 0, 0))
+        artist = self.font.render(self.rendered_text["artist"], True, (0, 0, 0))
+        self.song_info_summary_surf.blit(title, (5, 20))
+        self.song_info_summary_surf.blit(artist, (5, 50))
+        self.window.blit(self.song_info_summary_surf, self.song_summ_pos)
         pg.display.flip()
 
     def run(self):

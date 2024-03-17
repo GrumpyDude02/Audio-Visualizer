@@ -36,7 +36,6 @@ class AudioFile:  # struct everything should be public
         "TDRC": "date",
         "TCON": "genre",
         "TBPM": "bpm",
-        "APIC": "cover",
     }
 
     @staticmethod
@@ -55,6 +54,20 @@ class AudioFile:  # struct everything should be public
                 return audio.tags[t].data
         return None
 
+    @staticmethod
+    def get_meta_data(filepath, format):
+        d = {}
+        if format == "MP3":
+            audio = MP3(filepath)
+            for t in AudioFile.mp3_tag_to_flac_tag.keys():
+                val = audio.get(t)
+                d[AudioFile.mp3_tag_to_flac_tag[t]] = val[0] if val is not None else None
+        if format == "FLAC":
+            audio = FLAC(filepath)
+            for v in AudioFile.mp3_tag_to_flac_tag.values():
+                d[v] = audio[v][0]
+        return d
+
     def __init__(self, filepath: str, fft_size):
         try:
             t = time.perf_counter()
@@ -63,7 +76,8 @@ class AudioFile:  # struct everything should be public
             self.state = AudioFile.IDLE
             info = sf.info(filepath)
             self.format = info.format
-            self.meta_data = self.file.copy_metadata()
+            self.meta_data = AudioFile.get_meta_data(self.filepath, self.format)
+            print(self.meta_data)
             self.og_img = None
             self.resized_img = None
             self.duration = info.duration
@@ -240,13 +254,17 @@ class AudioManager:
         if self.current is not None:
             duration = self.current.duration
             cover = self.current.get_resized_img()
+            title = self.current.meta_data["title"]
+            artist = self.current.meta_data["artist"]
             toggle = AudioFile.PLAYING
         else:
             duration = 0
-            cover = None
+            artist = title = cover = None
             toggle = AudioFile.PAUSED
         return {
             "duration": duration,
+            "artist": artist,
+            "title": title,
             "cover": cover,
             "next": self.get_queue_state(),
             "toggle": toggle,
