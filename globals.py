@@ -1,4 +1,4 @@
-base_resolution = (600, 600)
+base_resolution = (1080, 600)
 min_val = 0
 max_val = 2**16 - 1
 fft_size = 4096

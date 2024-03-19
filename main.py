@@ -16,36 +16,36 @@ slider_template = ButtonTemplate((0, 0, 0), (255, 165, 0), (200, 200, 200), (20,
 
 bluish_grey = (14, 29, 39)
 
-control_bar_upper_pos = 0.7
-control_bar_lower_pos = 1.04
-control_bar_height = 0.5
+control_bar_upper_pos = 420
+control_bar_lower_pos = 625
+control_bar_height = 350
 
-toggle_button_size = (0.05, 0.1)
-toggle_button_pos = (0.5 - toggle_button_size[0] / 2, 1.17)
+toggle_button_size = (60, 60)
+toggle_button_pos = (540 - toggle_button_size[0] / 2, 702)
 
-skip_button_size = (0.03, 0.07)
-skip_button_pos = (0.58, 1.18)
+skip_button_size = (42, 42)
+skip_button_pos = (626, 708)
 
-slider_pos = (0.1, 1.07)
-slider_size = (0.8, 0.025)
+slider_pos = (108, 642)
+slider_size = (864, 15)
 
 preview_size = 110
-lower_preview_scale = (0.025, 1.13)
+lower_preview_scale = (27, 678)
 
-white_bars_target_pos = 0.5
-white_bars_upper_pos = 0.35
-white_bars_scale_perc = 0.6
+white_bars_target_pos = 300
+white_bars_upper_pos = 210
+white_bars_scale_perc = 360
 
-soundmeter_rect_height = 0.025
-soundmeter_scale_perc = 0.8
-soundmeter_bars_upper_pos = 0.687
-soundmeter_bars_target_pos = 1
+soundmeter_rect_height = 15
+soundmeter_scale_perc = 480
+soundmeter_bars_upper_pos = 412
+soundmeter_bars_target_pos = 600
 
 
 smoothing_speed = 5
 
 
-song_info_summary_pos = (0.135, 1.12)
+song_info_summary_pos = (145, 672)
 
 
 def time_format(time: int) -> str:
@@ -115,22 +115,22 @@ class Application:
 
         self.min_size = min_size
         self.base_font_size = font_size
-        scale = min(self.width / gp.base_resolution[0], self.height / gp.base_resolution[1])
-        self.font_size = int(self.base_font_size * scale)
+        self.scales = [self.width / gp.base_resolution[0], self.height / gp.base_resolution[1]]
+        self.min_scale = min(self.scales)
+        self.font_size = int(self.base_font_size * self.min_scale)
         self.init_font(font_size, font_path, False)
         self.font_path = font_path
         self.bar_min_height = int(self.height * 0.01)
         self.bar_max_height = self.height
         self.bar_width = None
         self.init_bars(style=self.style)
-        self.calculate_pos(self.width, self.height, self.style, scale)
+        self.calculate_pos(self.width, self.style, self.scales[0], self.scales[1], self.min_scale)
 
         self.play_pause_toggle = ToggleButtons(
             self.images,
             ToggleTemplate,
             toggle_button_size,
             toggle_button_pos,
-            (self.width, self.height),
             keys=[AudioFile.PAUSED, AudioFile.PLAYING],
             scale=0.5,
         )
@@ -140,15 +140,12 @@ class Application:
             ToggleTemplate,
             skip_button_size,
             skip_button_pos,
-            (self.width, self.height),
             keys=[AudioManager.QUEUE_EMPTY, AudioManager.QUEUE_FULL],
             current_key=self.am.get_queue_state(),
             scale=0.5,
         )
 
-        self.slider = sl.TimeSlider(
-            slider_template, slider_pos, slider_size, self.font, time_format, [0, 1], (self.width, self.height)
-        )
+        self.slider = sl.TimeSlider(slider_template, slider_pos, slider_size, self.font, time_format, [0, 1])
         self.show_control_bar = False
         self.show_settings_bar = False
         self.running = True
@@ -191,24 +188,22 @@ class Application:
             ]
         )
 
-    def calculate_pos(self, width, height, style, scale):
-        SoundMeterBar.calculate_class_dim(
-            self.height * soundmeter_rect_height, self.height * soundmeter_scale_perc, self.height
-        )
-        self.rect_target_pos = (0, height * control_bar_upper_pos)
-        self.rect_lower_pos = (0, height * control_bar_lower_pos)
+    def calculate_pos(self, width, style, scalex, scaley, min_scale):
+        SoundMeterBar.calculate_class_dim(soundmeter_rect_height, soundmeter_scale_perc, self.height)
+        self.rect_target_pos = (0, control_bar_upper_pos * scaley)
+        self.rect_lower_pos = (0, control_bar_lower_pos * scaley)
         self.control_bar_rect = pg.Rect(
             self.rect_lower_pos[0],
             self.rect_lower_pos[1],
             width,
-            height * control_bar_height,
+            control_bar_height,
         )
-        resized_no_image = pg.transform.smoothscale(self.images["NoImage"], (50 * scale, 50 * scale))
-        self.lower_preview_pos = (lower_preview_scale[0] * self.width, lower_preview_scale[1] * self.height)
-        self.preview_pos = (lower_preview_scale[0] * self.width, lower_preview_scale[1] * self.height)
+        resized_no_image = pg.transform.smoothscale(self.images["NoImage"], (50 * min_scale, 50 * min_scale))
+        self.lower_preview_pos = (lower_preview_scale[0] * scalex, lower_preview_scale[1] * scaley)
+        self.preview_pos = (lower_preview_scale[0] * scalex, lower_preview_scale[1] * scaley)
 
-        Bar.scale = self.height * white_bars_scale_perc
-        self.preview_size = (scale * preview_size, scale * preview_size)
+        Bar.scale = white_bars_scale_perc * min_scale
+        self.preview_size = (min_scale * preview_size, min_scale * preview_size)
 
         white_surf = pg.Surface(self.preview_size, pg.SRCALPHA)
         pg.draw.rect(white_surf, (255, 255, 255), white_surf.get_rect(), border_radius=4)
@@ -218,9 +213,9 @@ class Application:
         center_pos = resized_no_image.get_rect(center=self.place_holder_preview.get_rect().center)
         self.place_holder_preview.blit(resized_no_image, center_pos)
 
-        self.song_info_summary_surf = pg.Surface((0.25 * self.width, 0.2 * self.height), pg.HWSURFACE | pg.SRCALPHA)
+        self.song_info_summary_surf = pg.Surface((270 * scalex, 120 * scaley), pg.HWSURFACE | pg.SRCALPHA)
         self.song_info_summary_surf.fill((0, 0, 0, 0))
-        self.song_summ_pos = [song_info_summary_pos[0] * self.width, song_info_summary_pos[1] * self.height]
+        self.song_summ_pos = [song_info_summary_pos[0] * scalex, song_info_summary_pos[1] * scaley]
 
         preview_img = self.am.resize_preview(self.preview_size)
         if preview_img is not None:
@@ -232,11 +227,11 @@ class Application:
             self.preview_img = self.place_holder_preview
 
         if style == Styles.WhiteBars:
-            self.target_bars_height = height * white_bars_target_pos
-            self.upper_bars_height = height * white_bars_upper_pos
+            self.target_bars_height = scaley * white_bars_target_pos
+            self.upper_bars_height = scaley * white_bars_upper_pos
         else:
-            self.upper_bars_height = height * soundmeter_bars_upper_pos
-            self.target_bars_height = height * soundmeter_bars_target_pos
+            self.upper_bars_height = scaley * soundmeter_bars_upper_pos
+            self.target_bars_height = scaley * soundmeter_bars_target_pos
 
     def init_font(self, font_size, font_path: str, bold: bool = False):
         try:
@@ -246,11 +241,11 @@ class Application:
         self.font.set_bold(bold)
 
     def resize(self, n_size: tuple):
-        s = min(n_size[0] / gp.base_resolution[0], n_size[1] / gp.base_resolution[1])
-        self.width = n_size[0]
-        self.height = n_size[1]
-        self.calculate_pos(self.width, self.height, self.style, s)
-        self.font_size = int(self.base_font_size * s)
+        self.width, self.height = n_size[0], n_size[1]
+        self.scales = [self.width / gp.base_resolution[0], self.height / gp.base_resolution[1]]
+        self.min_scale = min(self.scales)
+        self.calculate_pos(self.width, self.style, self.scales[0], self.scales[1], self.min_scale)
+        self.font_size = int(self.base_font_size * self.min_scale)
         self.init_font(self.font_size, self.font_path, False)
 
         if not self.indexes:
@@ -260,9 +255,9 @@ class Application:
         offset = (self.width - self.bar_width * len(self.indexes)) // 2
         for i in range(len(self.bars)):
             self.bars[i].pos = (i * self.bar_width + offset + self.bar_spacing / 2, self.height // 2)
-        self.play_pause_toggle.resize(self.images, (self.width, self.height), self.am.get_audio_state())
-        self.skip_button.resize(self.images, (self.width, self.height), self.am.get_queue_state())
-        self.slider.resize((self.width, self.height), self.font)
+        self.play_pause_toggle.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_audio_state())
+        self.skip_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_queue_state())
+        self.slider.resize((self.scales[0], self.scales[1]), self.font)
 
     def display_loading(self):
         rect = pg.Rect(self.width * 0.05, self.height * 0.05, self.width * 0.2, self.height * 0.15)
@@ -481,8 +476,8 @@ class Application:
             self.display_loading()
         title = self.font.render(self.rendered_text["title"], True, (0, 0, 0))
         artist = self.font.render(self.rendered_text["artist"], True, (0, 0, 0))
-        self.song_info_summary_surf.blit(title, (5, 20))
-        self.song_info_summary_surf.blit(artist, (5, 50))
+        self.song_info_summary_surf.blit(title, (5 * self.scales[0], 20 * self.scales[1]))
+        self.song_info_summary_surf.blit(artist, (5 * self.scales[0], 50 * self.scales[1]))
         self.window.blit(self.song_info_summary_surf, self.song_summ_pos)
         pg.display.flip()
 
