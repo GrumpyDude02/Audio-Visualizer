@@ -24,7 +24,9 @@ toggle_button_size = (60, 60)
 toggle_button_pos = (540 - toggle_button_size[0] / 2, 702)
 
 skip_button_size = (42, 42)
-skip_button_pos = (626, 708)
+skip_button_pos = (603, 711)
+
+prev_button_pos = (436, 711)
 
 slider_pos = (108, 642)
 slider_size = (864, 15)
@@ -108,10 +110,13 @@ class Application:
         self.images = {
             AudioFile.PAUSED: pg.image.load("Assets/images/play.png").convert_alpha(),
             AudioFile.PLAYING: pg.image.load("Assets/images/pause.png").convert_alpha(),
-            AudioManager.QUEUE_FULL: pg.image.load("Assets/images/skip_to_end.png").convert_alpha(),
-            AudioManager.QUEUE_EMPTY: pg.image.load("Assets/images/grayed_skip.png").convert_alpha(),
+            AudioManager.NEXT_AVAILABLE: pg.image.load("Assets/images/skip_to_end.png").convert_alpha(),
+            AudioManager.END_OF_LIST: pg.image.load("Assets/images/grayed_skip.png").convert_alpha(),
             "NoImage": pg.image.load("Assets/images/no_image.png"),
         }
+
+        self.images[AudioManager.PREV_AVAILABLE] = pg.transform.flip(self.images[AudioManager.NEXT_AVAILABLE], True, False)
+        self.images[AudioManager.START_OF_LIST] = pg.transform.flip(self.images[AudioManager.END_OF_LIST], True, False)
 
         self.min_size = min_size
         self.base_font_size = font_size
@@ -140,8 +145,18 @@ class Application:
             ToggleTemplate,
             skip_button_size,
             skip_button_pos,
-            keys=[AudioManager.QUEUE_EMPTY, AudioManager.QUEUE_FULL],
-            current_key=self.am.get_queue_state(),
+            keys=[AudioManager.END_OF_LIST, AudioManager.NEXT_AVAILABLE],
+            current_key=self.am.get_next_button_state(),
+            scale=0.5,
+        )
+
+        self.prev_button = ToggleButtons(
+            self.images,
+            ToggleTemplate,
+            skip_button_size,
+            prev_button_pos,
+            keys=[AudioManager.START_OF_LIST, AudioManager.PREV_AVAILABLE],
+            current_key=self.am.get_previous_button_state(),
             scale=0.5,
         )
 
@@ -241,7 +256,10 @@ class Application:
         self.font.set_bold(bold)
 
     def resize(self, n_size: tuple):
-        self.width, self.height = n_size[0], n_size[1]
+        if n_size < (gp.MIN_WIDTH, gp.MIN_HEIGHT):
+            n_size = (gp.MIN_WIDTH, gp.MIN_HEIGHT)
+            pg.display.set_mode(n_size, flags=self.flags)
+        self.width, self.height = n_size
         self.scales = [self.width / gp.base_resolution[0], self.height / gp.base_resolution[1]]
         self.min_scale = min(self.scales)
         self.calculate_pos(self.width, self.style, self.scales[0], self.scales[1], self.min_scale)
@@ -256,7 +274,8 @@ class Application:
         for i in range(len(self.bars)):
             self.bars[i].pos = (i * self.bar_width + offset + self.bar_spacing / 2, self.height // 2)
         self.play_pause_toggle.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_audio_state())
-        self.skip_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_queue_state())
+        self.skip_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_next_button_state())
+        self.prev_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_previous_button_state())
         self.slider.resize((self.scales[0], self.scales[1]), self.font)
 
     def display_loading(self):
@@ -315,11 +334,19 @@ class Application:
 
         if self.play_pause_toggle.check_input():
             self.am.toggle_pause()
-            self.skip_button.update(self.am.get_queue_state())
+            self.skip_button.update(self.am.get_next_button_state())
+            self.prev_button.update(self.am.get_previous_button_state())
             self.play_pause_toggle.update(self.am.get_audio_state())
 
         if self.skip_button.check_input():
             self.am.skip()
+            self.skip_button.update(self.am.get_next_button_state())
+            self.prev_button.update(self.am.get_previous_button_state())
+
+        if self.prev_button.check_input():
+            self.am.previous()
+            self.skip_button.update(self.am.get_next_button_state())
+            self.prev_button.update(self.am.get_previous_button_state())
 
     def update(self):
         self.play_pause_toggle.check_input()
@@ -367,11 +394,17 @@ class Application:
             self.control_bar_rect.top = self.control_bar_rect.top - v
             self.play_pause_toggle.outline_rect.top = self.play_pause_toggle.outline_rect.top - v
             self.play_pause_toggle.rectangle.top = self.play_pause_toggle.rectangle.top - v
+
             self.skip_button.outline_rect.top = self.skip_button.outline_rect.top - v
             self.skip_button.rectangle.top = self.skip_button.rectangle.top - v
+
+            self.prev_button.outline_rect.top = self.prev_button.outline_rect.top - v
+            self.prev_button.rectangle.top = self.prev_button.rectangle.top - v
+
             self.slider.button_rect.top = self.slider.button_rect.top - v
             self.slider.button_outline.top = self.slider.button_outline.top - v
             self.slider.rectangle_bar.top = self.slider.rectangle_bar.top - v
+
             self.preview_pos = (self.preview_pos[0], int(self.preview_pos[1] - v))
             self.song_summ_pos[1] = int(self.song_summ_pos[1] - v)
             height = self.height - (self.height - self.control_bar_rect.top)
@@ -430,6 +463,21 @@ class Application:
             )
             self.skip_button.draw(self.window)
             pg.draw.rect(self.window, (0, 0, 0), self.skip_button.outline_rect, border_radius=4, width=2)
+
+            pg.draw.rect(
+                self.window,
+                (35, 35, 35),
+                (
+                    self.prev_button.outline_rect[0] + 4,
+                    self.prev_button.outline_rect[1] - 3,
+                    self.prev_button.outline_rect[2],
+                    self.prev_button.outline_rect[3],
+                ),
+                border_radius=4,
+            )
+            self.prev_button.draw(self.window)
+            pg.draw.rect(self.window, (0, 0, 0), self.prev_button.outline_rect, border_radius=4, width=2)
+
             self.slider.draw(self.window)
             r = self.preview_img.get_rect()
             pg.draw.rect(

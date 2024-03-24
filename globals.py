@@ -10,3 +10,6 @@ min_bar_width = 50
 dtype = "int16"
 WIDTH = 1080
 HEIGHT = 600
+
+MIN_WIDTH = 600
+MIN_HEIGHT = 400

@@ -167,6 +167,10 @@ class AudioManager:
     SKIP = "SKIP"
     QUEUE_FULL = "QUEUE_FULL"
     QUEUE_EMPTY = "QUEUE_EMPTY"
+    END_OF_LIST = "END_OF_LIST"
+    START_OF_LIST = "START_OF_LIST"
+    NEXT_AVAILABLE = "NEXT_AVAILABLE"
+    PREV_AVAILABLE = "PREV_AVAILABLE"
 
     REACHED_END = 0
     UPDATED = 1
@@ -266,7 +270,7 @@ class AudioManager:
             "artist": artist,
             "title": title,
             "cover": cover,
-            "next": self.get_queue_state(),
+            "next": self.get_next_button_state(),
             "toggle": toggle,
         }
 
@@ -345,8 +349,15 @@ class AudioManager:
         )
         return (default_device.FriendlyName, default_device.id)
 
-    def get_queue_state(self):
-        return AudioManager.QUEUE_EMPTY if self.current_index == len(self.audio_queue) else AudioManager.QUEUE_FULL
+    def get_next_button_state(self):
+        return AudioManager.END_OF_LIST if self.current_index == len(self.audio_queue) else AudioManager.NEXT_AVAILABLE
+
+    def get_previous_button_state(self):
+        return (
+            AudioManager.START_OF_LIST
+            if (len(self.audio_queue) <= 1 or self.current_index == 0)
+            else AudioManager.PREV_AVAILABLE
+        )
 
     def get_amps(self):
         return self.amps

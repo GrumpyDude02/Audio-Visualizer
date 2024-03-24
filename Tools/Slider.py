@@ -36,7 +36,7 @@ class Slider:
             self.size[0] * sc_size[0],
             self.size[1] * sc_size[1],
         )
-        button_size = (max(self.rectangle_bar.width * 0.015, 10), max(self.rectangle_bar.height * 1.3, 30))
+        button_size = (max(self.rectangle_bar.width * 0.015, 10), max(self.rectangle_bar.height * 1.1, 15))
 
         button_position = (0, 0)
         self.button_rect = pygame.Rect(button_position, button_size)
