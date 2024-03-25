@@ -94,7 +94,7 @@ class Application:
         self.control_time = 3000  # miliseconds
         self.last_update_time = 0
 
-        self.flags = pg.HWACCEL
+        self.flags = 0
         self.resizable = resizable
 
         if self.resizable:
@@ -284,7 +284,10 @@ class Application:
 
         offset = (self.width - self.bar_width * len(self.indexes)) // 2
         for i in range(len(self.bars)):
-            self.bars[i].pos = (i * self.bar_width + offset + self.bar_spacing / 2, self.height // 2)
+            self.bars[i].pos = (
+                i * self.bar_width + offset + self.bar_spacing / 2,
+                self.target_bars_height,
+            )
         self.play_pause_toggle.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_audio_state())
         self.skip_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_next_button_state())
         self.prev_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_previous_button_state())
@@ -420,8 +423,10 @@ class Application:
 
             self.preview_pos = (self.preview_pos[0], int(self.preview_pos[1] - v))
             self.song_summ_pos[1] = int(self.song_summ_pos[1] - v)
-            height = self.height - (self.height - self.control_bar_rect.top)
-            SoundMeterBar.calculate_class_dim(height * soundmeter_rect_height, height * soundmeter_scale_perc, height)
+            if self.style == Styles.SoundMeter:
+                height = self.height - (self.height - self.control_bar_rect.top)
+                ratio = height / self.height
+                SoundMeterBar.calculate_class_dim(ratio * soundmeter_rect_height, soundmeter_scale_perc * ratio, height)
 
         amps = self.am.get_amps()
         for bar in self.bars:
@@ -443,7 +448,7 @@ class Application:
                 self.resize(new_size)
             self.draw()
             self.update()
-            win32gui.RedrawWindow(hWnd, None, None, win32con.RDW_INVALIDATE | win32con.RDW_ERASE)
+        win32gui.RedrawWindow(hWnd, None, None, win32con.RDW_INVALIDATE | win32con.RDW_ERASE)
         return win32gui.CallWindowProc(oldWndProc, hWnd, message, wParam, lParam)
 
     def draw(self):
@@ -547,7 +552,7 @@ class Application:
                 border_radius=4,
             )
         # ---------------------------
-        # pg.draw.circle(self.window, (0, 255, 0), pg.mouse.get_pos(), 50)
+
         for bar in self.bars:
             bar.draw(self.window, self.bar_width - self.bar_spacing)
         if len(self.files_queue) > 0:
@@ -578,7 +583,7 @@ if __name__ == "__main__":
         (gp.WIDTH, gp.HEIGHT),
         True,
         "Audio Visualizer",
-        style=Styles.WhiteBars,
+        style=Styles.SoundMeter,
     )
 
     if gp.PLATFORM == "nt":

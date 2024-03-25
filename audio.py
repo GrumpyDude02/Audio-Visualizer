@@ -1,10 +1,11 @@
-import threading, time, io, pyaudio, comtypes, pygame as pg, numpy as np, soundfile as sf, globals as gp
+import threading, time, io, pyaudio, pygame as pg, numpy as np, soundfile as sf, globals as gp
 from scipy.fft import fft
 from scipy.signal.windows import hann
 from mutagen.mp3 import MP3
 from mutagen.flac import FLAC
 
 if gp.PLATFORM == "nt":
+    import comtypes
     from pycaw.constants import CLSID_MMDeviceEnumerator
     from pycaw.pycaw import DEVICE_STATE, AudioUtilities, EDataFlow, IMMDeviceEnumerator
 
@@ -191,11 +192,13 @@ class AudioManager:
         self.num_averages = 0
         self.amps = [0 for _ in range(self.fft_size // 2)]
         self.init_pyaudio()
-        self.deviceEnumerator = comtypes.CoCreateInstance(CLSID_MMDeviceEnumerator, IMMDeviceEnumerator, comtypes.CLSCTX_ALL)
-        self.timeline_update_status = (False, False)  # (updated,pressed)
-        if gp.PLATFORM =='nt':
+        if gp.PLATFORM == "nt":
+            self.deviceEnumerator = comtypes.CoCreateInstance(
+                CLSID_MMDeviceEnumerator, IMMDeviceEnumerator, comtypes.CLSCTX_ALL
+            )
             self.output_check_thread = threading.Thread(target=self.check_output_change, daemon=True)
             self.output_check_thread.start()
+        self.timeline_update_status = (False, False)  # (updated,pressed)
         self.cache = {}
         self.current_index = 0
 
