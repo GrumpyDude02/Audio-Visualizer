@@ -1,3 +1,5 @@
+import os
+
 base_resolution = (1080, 600)
 min_val = 0
 max_val = 2**16 - 1
@@ -13,3 +15,5 @@ HEIGHT = 600
 
 MIN_WIDTH = 600
 MIN_HEIGHT = 400
+
+PLATFORM = os.name

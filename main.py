@@ -3,9 +3,8 @@ import pygame as pg
 import globals as gp
 from audio import AudioManager, AudioFile
 from Bar import Bar, SoundMeterBar
-from Tools.Buttons import ToggleButtons, ButtonTemplate, Buttons
+from Tools.Buttons import ToggleButtons, ButtonTemplate
 import Tools.Slider as sl
-from math import ceil
 
 
 ToggleTemplate = ButtonTemplate(
@@ -46,7 +45,6 @@ soundmeter_bars_target_pos = 600
 
 smoothing_speed = 5
 
-
 song_info_summary_pos = (145, 672)
 
 
@@ -56,6 +54,13 @@ def time_format(time: int) -> str:
     return f"{t//60:02d}:{t%60:02d}"
 
 
+if gp.PLATFORM == "nt":
+    import win32gui, win32con, timer
+
+    def ping_timer(id, time):
+        win32gui.PostMessage(Application.HWIND, win32con.WM_TIMER, Application.TIMER_ID, 0)
+
+
 class Styles(enum.Enum):
     WhiteBars = "WhiteBars"
     MinimalistSoundMeter = "MinimalistSoundMeter"
@@ -63,6 +68,8 @@ class Styles(enum.Enum):
 
 
 class Application:
+    HWIND = None
+    TIMER_ID = None
 
     def __init__(
         self,
@@ -95,6 +102,7 @@ class Application:
         self.window = pg.display.set_mode(size, flags=self.flags)
         pg.display.set_caption(name)
         self.clock = pg.time.Clock()
+
         self.am = AudioManager(self, fft_size=gp.fft_size, bands_number=gp.bands_number)
         self.files_queue = []
         self.temp_queue = []
@@ -123,8 +131,10 @@ class Application:
         self.scales = [self.width / gp.base_resolution[0], self.height / gp.base_resolution[1]]
         self.min_scale = min(self.scales)
         self.font_size = int(self.base_font_size * self.min_scale)
-        self.init_font(font_size, font_path, False)
         self.font_path = font_path
+
+        self.init_font(font_size, font_path)
+
         self.bar_min_height = int(self.height * 0.01)
         self.bar_max_height = self.height
         self.bar_width = None
@@ -160,7 +170,7 @@ class Application:
             scale=0.5,
         )
 
-        self.slider = sl.TimeSlider(slider_template, slider_pos, slider_size, self.font, time_format, [0, 1])
+        self.slider = sl.TimeSlider(slider_template, slider_pos, slider_size, self.small_font, time_format, [0, 1])
         self.show_control_bar = False
         self.show_settings_bar = False
         self.running = True
@@ -248,23 +258,25 @@ class Application:
             self.upper_bars_height = scaley * soundmeter_bars_upper_pos
             self.target_bars_height = scaley * soundmeter_bars_target_pos
 
-    def init_font(self, font_size, font_path: str, bold: bool = False):
+    def init_font(self, font_size, font_path: str):
         try:
             self.font = pg.font.Font(font_path, font_size)
+            self.small_font = pg.font.Font(font_path, int(font_size * 0.8))
         except FileNotFoundError:
             self.font = pg.font.SysFont("Arial Black", size=font_size)
-        self.font.set_bold(bold)
+            self.small_font = pg.font.SysFont("Arial Black", int(font_size * 0.8))
+        self.font.set_bold(True)
+        self.small_font.set_bold(False)
 
     def resize(self, n_size: tuple):
-        if n_size < (gp.MIN_WIDTH, gp.MIN_HEIGHT):
-            n_size = (gp.MIN_WIDTH, gp.MIN_HEIGHT)
-            pg.display.set_mode(n_size, flags=self.flags)
-        self.width, self.height = n_size
+        self.width, self.height = max(n_size[0], gp.MIN_WIDTH), max(n_size[1], gp.MIN_HEIGHT)
+        if (self.width, self.height) != n_size:
+            self.window = pg.display.set_mode((self.width, self.height), flags=self.flags)
         self.scales = [self.width / gp.base_resolution[0], self.height / gp.base_resolution[1]]
         self.min_scale = min(self.scales)
         self.calculate_pos(self.width, self.style, self.scales[0], self.scales[1], self.min_scale)
         self.font_size = int(self.base_font_size * self.min_scale)
-        self.init_font(self.font_size, self.font_path, False)
+        self.init_font(self.font_size, self.font_path)
 
         if not self.indexes:
             return
@@ -276,7 +288,7 @@ class Application:
         self.play_pause_toggle.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_audio_state())
         self.skip_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_next_button_state())
         self.prev_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_previous_button_state())
-        self.slider.resize((self.scales[0], self.scales[1]), self.font)
+        self.slider.resize((self.scales[0], self.scales[1]), self.small_font)
 
     def display_loading(self):
         rect = pg.Rect(self.width * 0.05, self.height * 0.05, self.width * 0.2, self.height * 0.15)
@@ -318,8 +330,9 @@ class Application:
                 self.show_control_bar = True
                 self.last_update_time = time.time() * 1000
 
-            if event.type == pg.VIDEORESIZE:
+            if gp.PLATFORM != "nt" and event.type == pg.VIDEORESIZE:
                 self.resize(event.size)
+
             if event.type == pg.DROPFILE:
                 self.temp_queue.append(event.file)
 
@@ -415,6 +428,23 @@ class Application:
             bar.update(amps, self.dt, self.bar_min_height, self.bar_max_height)
 
         self.dt = min(self.clock.tick(self.fps) * 0.001, 0.066)
+
+    def resize_nt(self, oldWndProc, hWnd, message, wParam, lParam):
+        if message == win32con.WM_ENTERSIZEMOVE:
+            Application.TIMER_ID = timer.set_timer(5, ping_timer)
+        elif message == win32con.WM_EXITSIZEMOVE:
+            timer.kill_timer(Application.TIMER_ID)  # Stop the timer
+        elif (message == win32con.WM_TIMER and wParam == Application.TIMER_ID) or message in (
+            win32con.WM_SIZE,
+            win32con.WM_MOVE,
+        ):
+            new_size = (self.window.get_width(), self.window.get_height())
+            if (self.width, self.height) != new_size:
+                self.resize(new_size)
+            self.draw()
+            self.update()
+            win32gui.RedrawWindow(hWnd, None, None, win32con.RDW_INVALIDATE | win32con.RDW_ERASE)
+        return win32gui.CallWindowProc(oldWndProc, hWnd, message, wParam, lParam)
 
     def draw(self):
         self.window.fill(bluish_grey)
@@ -523,9 +553,9 @@ class Application:
         if len(self.files_queue) > 0:
             self.display_loading()
         title = self.font.render(self.rendered_text["title"], True, (0, 0, 0))
-        artist = self.font.render(self.rendered_text["artist"], True, (0, 0, 0))
+        artist = self.small_font.render(self.rendered_text["artist"], True, (0, 0, 0))
         self.song_info_summary_surf.blit(title, (5 * self.scales[0], 20 * self.scales[1]))
-        self.song_info_summary_surf.blit(artist, (5 * self.scales[0], 50 * self.scales[1]))
+        self.song_info_summary_surf.blit(artist, (5 * self.scales[0], 45 * self.scales[1]))
         self.window.blit(self.song_info_summary_surf, self.song_summ_pos)
         pg.display.flip()
 
@@ -543,11 +573,20 @@ if __name__ == "__main__":
     # main()
     app = Application(
         "Assets/Fonts/PixCon.ttf",
-        12,
+        13,
         60,
         (gp.WIDTH, gp.HEIGHT),
         True,
         "Audio Visualizer",
         style=Styles.WhiteBars,
     )
+
+    if gp.PLATFORM == "nt":
+        Application.HWIND = win32gui.GetForegroundWindow()
+        oldWndProc = win32gui.SetWindowLong(
+            Application.HWIND,
+            win32con.GWL_WNDPROC,
+            lambda *args: app.resize_nt(oldWndProc, *args),
+        )
+
     app.run()
