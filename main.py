@@ -1,8 +1,9 @@
 import sys, threading, time, enum
 import pygame as pg
 import globals as gp
+import m_platform as pf
 from audio import AudioManager, AudioFile
-from Bar import Bar, SoundMeterBar
+from bar import Bar, SoundMeterBar
 from Tools.Buttons import ToggleButtons, ButtonTemplate
 import Tools.Slider as sl
 
@@ -54,13 +55,6 @@ def time_format(time: int) -> str:
     return f"{t//60:02d}:{t%60:02d}"
 
 
-if gp.PLATFORM == "nt":
-    import win32gui, win32con, timer
-
-    def ping_timer(id, time):
-        win32gui.PostMessage(Application.HWIND, win32con.WM_TIMER, Application.TIMER_ID, 0)
-
-
 class Styles(enum.Enum):
     WhiteBars = "WhiteBars"
     MinimalistSoundMeter = "MinimalistSoundMeter"
@@ -99,8 +93,18 @@ class Application:
 
         if self.resizable:
             self.flags |= pg.RESIZABLE
+        pg.display.set_icon(pg.image.load("Assets/images/icon32x32.png"))
         self.window = pg.display.set_mode(size, flags=self.flags)
         pg.display.set_caption(name)
+        pf.init_resize_function(self.resize_win32)
+
+        self.images = {
+            AudioFile.PAUSED: pg.image.load("Assets/images/play.png").convert_alpha(),
+            AudioFile.PLAYING: pg.image.load("Assets/images/pause.png").convert_alpha(),
+            AudioManager.NEXT_AVAILABLE: pg.image.load("Assets/images/skip_to_end.png").convert_alpha(),
+            AudioManager.END_OF_LIST: pg.image.load("Assets/images/grayed_skip.png").convert_alpha(),
+            "NoImage": pg.image.load("Assets/images/no_image.png"),
+        }
         self.clock = pg.time.Clock()
 
         self.am = AudioManager(self, fft_size=gp.fft_size, bands_number=gp.bands_number)
@@ -114,15 +118,6 @@ class Application:
         self.audio_loader_thread = threading.Thread(target=self.add_file)
         self.audio_loader_thread.daemon = True
         self.audio_loader_thread.start()
-
-        self.images = {
-            AudioFile.PAUSED: pg.image.load("Assets/images/play.png").convert_alpha(),
-            AudioFile.PLAYING: pg.image.load("Assets/images/pause.png").convert_alpha(),
-            AudioManager.NEXT_AVAILABLE: pg.image.load("Assets/images/skip_to_end.png").convert_alpha(),
-            AudioManager.END_OF_LIST: pg.image.load("Assets/images/grayed_skip.png").convert_alpha(),
-            "NoImage": pg.image.load("Assets/images/no_image.png"),
-        }
-
         self.images[AudioManager.PREV_AVAILABLE] = pg.transform.flip(self.images[AudioManager.NEXT_AVAILABLE], True, False)
         self.images[AudioManager.START_OF_LIST] = pg.transform.flip(self.images[AudioManager.END_OF_LIST], True, False)
 
@@ -268,8 +263,15 @@ class Application:
         self.font.set_bold(True)
         self.small_font.set_bold(False)
 
-    def resize(self, n_size: tuple):
-        self.width, self.height = max(n_size[0], gp.MIN_WIDTH), max(n_size[1], gp.MIN_HEIGHT)
+    def resize_win32(self):
+        new_size = (self.window.get_width(), self.window.get_height())
+        if (self.width, self.height) != new_size:
+            self.resize(new_size)
+        self.draw()
+        self.update()
+
+    def resize(self, n_size):
+        self.width, self.height = max(self.window.get_width(), gp.MIN_WIDTH), max(self.window.get_height(), gp.MIN_HEIGHT)
         if (self.width, self.height) != n_size:
             self.window = pg.display.set_mode((self.width, self.height), flags=self.flags)
         self.scales = [self.width / gp.base_resolution[0], self.height / gp.base_resolution[1]]
@@ -333,8 +335,7 @@ class Application:
                 self.show_control_bar = True
                 self.last_update_time = time.time() * 1000
 
-            if gp.PLATFORM != "nt" and event.type == pg.VIDEORESIZE:
-                self.resize(event.size)
+            pf.resize(event.type == pg.VIDEORESIZE, self.resize, event.dict.get("size"))
 
             if event.type == pg.DROPFILE:
                 self.temp_queue.append(event.file)
@@ -433,23 +434,6 @@ class Application:
             bar.update(amps, self.dt, self.bar_min_height, self.bar_max_height)
 
         self.dt = min(self.clock.tick(self.fps) * 0.001, 0.066)
-
-    def resize_nt(self, oldWndProc, hWnd, message, wParam, lParam):
-        if message == win32con.WM_ENTERSIZEMOVE:
-            Application.TIMER_ID = timer.set_timer(5, ping_timer)
-        elif message == win32con.WM_EXITSIZEMOVE:
-            timer.kill_timer(Application.TIMER_ID)  # Stop the timer
-        elif (message == win32con.WM_TIMER and wParam == Application.TIMER_ID) or message in (
-            win32con.WM_SIZE,
-            win32con.WM_MOVE,
-        ):
-            new_size = (self.window.get_width(), self.window.get_height())
-            if (self.width, self.height) != new_size:
-                self.resize(new_size)
-            self.draw()
-            self.update()
-        win32gui.RedrawWindow(hWnd, None, None, win32con.RDW_INVALIDATE | win32con.RDW_ERASE)
-        return win32gui.CallWindowProc(oldWndProc, hWnd, message, wParam, lParam)
 
     def draw(self):
         self.window.fill(bluish_grey)
@@ -583,15 +567,6 @@ if __name__ == "__main__":
         (gp.WIDTH, gp.HEIGHT),
         True,
         "Audio Visualizer",
-        style=Styles.SoundMeter,
+        style=Styles.WhiteBars,
     )
-
-    if gp.PLATFORM == "nt":
-        Application.HWIND = win32gui.GetForegroundWindow()
-        oldWndProc = win32gui.SetWindowLong(
-            Application.HWIND,
-            win32con.GWL_WNDPROC,
-            lambda *args: app.resize_nt(oldWndProc, *args),
-        )
-
     app.run()

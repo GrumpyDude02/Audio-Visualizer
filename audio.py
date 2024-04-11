@@ -1,21 +1,9 @@
 import threading, time, io, pyaudio, pygame as pg, numpy as np, soundfile as sf, globals as gp
+import m_platform as pf
 from scipy.fft import fft
 from scipy.signal.windows import hann
 from mutagen.mp3 import MP3
 from mutagen.flac import FLAC
-
-if gp.PLATFORM == "nt":
-    import comtypes
-    from pycaw.constants import CLSID_MMDeviceEnumerator
-    from pycaw.pycaw import DEVICE_STATE, AudioUtilities, EDataFlow, IMMDeviceEnumerator
-
-    def get_default_output_device():
-        deviceEnumerator = comtypes.CoCreateInstance(CLSID_MMDeviceEnumerator, IMMDeviceEnumerator, comtypes.CLSCTX_ALL)
-        default_device = AudioUtilities.CreateDevice(
-            deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value)
-        )
-        comtypes.CoUninitialize()
-        return (default_device.FriendlyName, default_device.id)
 
 
 class AudioFileTypeError(Exception):
@@ -57,7 +45,7 @@ class AudioFile:  # struct everything should be public
         return None
 
     @staticmethod
-    def get_meta_data(filepath, format):
+    def get_meta_data(filepath: str, format: str):
         d = {}
         if format == "MP3":
             audio = MP3(filepath)
@@ -68,6 +56,8 @@ class AudioFile:  # struct everything should be public
             audio = FLAC(filepath)
             for v in AudioFile.mp3_tag_to_flac_tag.values():
                 d[v] = audio[v][0]
+        if d["title"] == None:
+            d["title"] = filepath.split("\\" if pf.PLATFORM == "Windows" else "/")[-1]
         return d
 
     def __init__(self, filepath: str, fft_size):
@@ -192,12 +182,7 @@ class AudioManager:
         self.num_averages = 0
         self.amps = [0 for _ in range(self.fft_size // 2)]
         self.init_pyaudio()
-        if gp.PLATFORM == "nt":
-            self.deviceEnumerator = comtypes.CoCreateInstance(
-                CLSID_MMDeviceEnumerator, IMMDeviceEnumerator, comtypes.CLSCTX_ALL
-            )
-            self.output_check_thread = threading.Thread(target=self.check_output_change, daemon=True)
-            self.output_check_thread.start()
+        pf.init_platform_audio(self.check_output_change)
         self.timeline_update_status = (False, False)  # (updated,pressed)
         self.cache = {}
         self.current_index = 0
@@ -214,7 +199,7 @@ class AudioManager:
 
     def check_output_change(self):
         while True:
-            if self.default_output_device != self.get_default_output_device()[0]:
+            if self.default_output_device != pf.get_default_output_device()[0]:
                 self.terminate(clear=False)
                 self.init_pyaudio()
                 if self.current is not None:
@@ -309,7 +294,7 @@ class AudioManager:
         if clear and self.current is not None and self.current.stream is not None:
             self.audio_queue.clear()
             self.current.terminate()
-            comtypes.CoUninitialize()
+            pf.uninit_platform_audio()
         elif self.current is not None and self.current.stream is not None:
             self.current.stop_stream()
         if clear:
@@ -346,12 +331,6 @@ class AudioManager:
 
     def get_current_audio_pos(self):
         return 0 if self.current is None else self.current.get_pos()
-
-    def get_default_output_device(self):
-        default_device = AudioUtilities.CreateDevice(
-            self.deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value)
-        )
-        return (default_device.FriendlyName, default_device.id)
 
     def get_next_button_state(self):
         return AudioManager.END_OF_LIST if self.current_index == len(self.audio_queue) else AudioManager.NEXT_AVAILABLE
