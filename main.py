@@ -338,7 +338,7 @@ class Application:
             pf.resize(
                 event.type == pg.VIDEORESIZE,
                 self.resize,
-                size[0] if size is not None else None,
+                size,
             )
 
             if event.type == pg.DROPFILE:
