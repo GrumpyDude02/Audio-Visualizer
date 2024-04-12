@@ -93,17 +93,17 @@ class Application:
 
         if self.resizable:
             self.flags |= pg.RESIZABLE
-        pg.display.set_icon(pg.image.load("Assets/images/icon32x32.png"))
+        pg.display.set_icon(pg.image.load("assets/images/icon32x32.png"))
         self.window = pg.display.set_mode(size, flags=self.flags)
         pg.display.set_caption(name)
         pf.init_resize_function(self.resize_win32)
 
         self.images = {
-            AudioFile.PAUSED: pg.image.load("Assets/images/play.png").convert_alpha(),
-            AudioFile.PLAYING: pg.image.load("Assets/images/pause.png").convert_alpha(),
-            AudioManager.NEXT_AVAILABLE: pg.image.load("Assets/images/skip_to_end.png").convert_alpha(),
-            AudioManager.END_OF_LIST: pg.image.load("Assets/images/grayed_skip.png").convert_alpha(),
-            "NoImage": pg.image.load("Assets/images/no_image.png"),
+            AudioFile.PAUSED: pg.image.load("assets/images/play.png").convert_alpha(),
+            AudioFile.PLAYING: pg.image.load("assets/images/pause.png").convert_alpha(),
+            AudioManager.NEXT_AVAILABLE: pg.image.load("assets/images/skip_to_end.png").convert_alpha(),
+            AudioManager.END_OF_LIST: pg.image.load("assets/images/grayed_skip.png").convert_alpha(),
+            "NoImage": pg.image.load("assets/images/no_image.png"),
         }
         self.clock = pg.time.Clock()
 
@@ -565,7 +565,7 @@ class Application:
 if __name__ == "__main__":
     # main()
     app = Application(
-        "Assets/Fonts/PixCon.ttf",
+        "assets/Fonts/PixCon.ttf",
         13,
         60,
         (gp.WIDTH, gp.HEIGHT),
