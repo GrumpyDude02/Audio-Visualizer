@@ -271,7 +271,7 @@ class Application:
         self.update()
 
     def resize(self, n_size):
-        self.width, self.height = max(self.window.get_width(), gp.MIN_WIDTH), max(self.window.get_height(), gp.MIN_HEIGHT)
+        self.width, self.height = max(n_size[0], gp.MIN_WIDTH), max(n_size[1], gp.MIN_HEIGHT)
         if (self.width, self.height) != n_size:
             self.window = pg.display.set_mode((self.width, self.height), flags=self.flags)
         self.scales = [self.width / gp.base_resolution[0], self.height / gp.base_resolution[1]]
