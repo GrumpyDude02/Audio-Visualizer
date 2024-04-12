@@ -70,7 +70,7 @@ else:
     def resize_callback():
         pass
 
-    def resize(condition: bool, resize_callback: function, *args):
+    def resize(condition: bool, resize_callback, *args):
         if condition:
             resize_callback(args)
 
