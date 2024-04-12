@@ -1,7 +1,7 @@
 import pygame as pg
 from pygame import gfxdraw
 import globals as gp
-import Tools.functions as fn
+import utilities.functions as fn
 from math import ceil
 
 

@@ -4,8 +4,8 @@ import globals as gp
 import m_platform as pf
 from audio import AudioManager, AudioFile
 from bar import Bar, SoundMeterBar
-from Tools.Buttons import ToggleButtons, ButtonTemplate
-import Tools.Slider as sl
+from utilities.Buttons import ToggleButtons, ButtonTemplate
+import utilities.Slider as sl
 
 
 ToggleTemplate = ButtonTemplate(
