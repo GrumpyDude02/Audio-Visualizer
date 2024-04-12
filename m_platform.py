@@ -43,7 +43,7 @@ if PLATFORM == "Windows":
             lambda *args: resize_callback(oldWndProc, callback_function, *args),
         )
 
-    def resize(event, resize_callback, *args):
+    def resize(resize_callback, *args):
         pass
 
     def init_platform_audio(callback_function):
@@ -70,9 +70,8 @@ else:
     def resize_callback():
         pass
 
-    def resize(condition: bool, resize_callback, *args):
-        if condition:
-            resize_callback(args)
+    def resize(resize_callback, *args):
+        resize_callback(*args)
 
     def init_platform_audio(callback_function):
         pass

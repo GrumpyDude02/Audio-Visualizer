@@ -336,7 +336,6 @@ class Application:
                 self.last_update_time = time.time() * 1000
             if event.type == pg.VIDEORESIZE:
                 pf.resize(
-                    event.type == pg.VIDEORESIZE,
                     self.resize,
                     event.size,
                 )
