@@ -334,12 +334,12 @@ class Application:
             if event.type == pg.MOUSEMOTION:
                 self.show_control_bar = True
                 self.last_update_time = time.time() * 1000
-            size = event.dict.get("size")
-            pf.resize(
-                event.type == pg.VIDEORESIZE,
-                self.resize,
-                size,
-            )
+            if event.type == pg.VIDEORESIZE:
+                pf.resize(
+                    event.type == pg.VIDEORESIZE,
+                    self.resize,
+                    event.size,
+                )
 
             if event.type == pg.DROPFILE:
                 self.temp_queue.append(event.file)
