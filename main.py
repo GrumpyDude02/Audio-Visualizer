@@ -564,7 +564,7 @@ class Application:
 if __name__ == "__main__":
     # main()
     app = Application(
-        "assets/Fonts/PixCon.ttf",
+        "assets/fonts/PixCon.ttf",
         13,
         60,
         (gp.WIDTH, gp.HEIGHT),
