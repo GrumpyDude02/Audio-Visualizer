@@ -123,6 +123,11 @@ class Slider:
             )
         pygame.draw.rect(surface, self.button_color, self.button_rect, border_radius=self.template.border_radius)
 
+    def move_by(self, offset):
+        self.button_rect.top += offset
+        self.button_outline.top += offset
+        self.rectangle_bar.top += offset
+
 
 class ValueSlider(Slider):
 

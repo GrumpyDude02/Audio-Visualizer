@@ -55,6 +55,11 @@ def time_format(time: int) -> str:
     return f"{t//60:02d}:{t%60:02d}"
 
 
+def draw_expend_rect(rect: tuple, color, offset_x, offset_y, width, border_radius, surface: pg.Surface):
+    """using this function to expend rect, thus avoiding long lines of code"""
+    pg.draw.rect(surface, color, (rect[0] + offset_x, rect[1] + offset_y, rect[2], rect[3]), width, border_radius)
+
+
 class Styles(enum.Enum):
     WhiteBars = "WhiteBars"
     MinimalistSoundMeter = "MinimalistSoundMeter"
@@ -397,36 +402,31 @@ class Application:
             not self.control_bar_rect.collidepoint(pg.mouse.get_pos()) or not pg.mouse.get_focused()
         ):
             self.show_control_bar = False
-        v = 0
+        offset = 0
         if self.show_control_bar:
             slider_update_status = self.slider.update()
             self.am.set_timeline_update_status(slider_update_status)
             if slider_update_status[0]:
                 self.am.set_pos(self.slider.output)
-            v = (self.control_bar_rect.top - self.rect_target_pos[1]) * self.dt * 6
-            k = (self.bars[0].pos[1] - self.upper_bars_height) * self.dt * 7
+            offset = (self.control_bar_rect.top - self.rect_target_pos[1]) * self.dt * 6
+            offset_bars = (self.bars[0].pos[1] - self.upper_bars_height) * self.dt * 7
         elif self.control_bar_rect.top <= self.rect_lower_pos[1] * 0.98:
-            v = (self.control_bar_rect.top - self.rect_lower_pos[1]) * self.dt * 6
-            k = (self.bars[0].pos[1] - self.target_bars_height) * self.dt * 7
-        if v != 0:
+            offset = (self.control_bar_rect.top - self.rect_lower_pos[1]) * self.dt * 6
+            offset_bars = (self.bars[0].pos[1] - self.target_bars_height) * self.dt * 7
+        if offset != 0:
             for bar in self.bars:
-                bar.pos = (bar.pos[0], bar.pos[1] - k)
-            self.control_bar_rect.top = self.control_bar_rect.top - v
-            self.play_pause_toggle.outline_rect.top = self.play_pause_toggle.outline_rect.top - v
-            self.play_pause_toggle.rectangle.top = self.play_pause_toggle.rectangle.top - v
+                bar.pos = (bar.pos[0], bar.pos[1] - offset_bars)
+            self.control_bar_rect.top = self.control_bar_rect.top - offset
+            self.play_pause_toggle.move_by(-offset)
 
-            self.skip_button.outline_rect.top = self.skip_button.outline_rect.top - v
-            self.skip_button.rectangle.top = self.skip_button.rectangle.top - v
+            self.skip_button.move_by(-offset)
 
-            self.prev_button.outline_rect.top = self.prev_button.outline_rect.top - v
-            self.prev_button.rectangle.top = self.prev_button.rectangle.top - v
+            self.prev_button.move_by(-offset)
 
-            self.slider.button_rect.top = self.slider.button_rect.top - v
-            self.slider.button_outline.top = self.slider.button_outline.top - v
-            self.slider.rectangle_bar.top = self.slider.rectangle_bar.top - v
+            self.slider.move_by(-offset)
 
-            self.preview_pos = (self.preview_pos[0], int(self.preview_pos[1] - v))
-            self.song_summ_pos[1] = int(self.song_summ_pos[1] - v)
+            self.preview_pos = (self.preview_pos[0], int(self.preview_pos[1] - offset))
+            self.song_summ_pos[1] = int(self.song_summ_pos[1] - offset)
             if self.style == Styles.SoundMeter:
                 height = self.height - (self.height - self.control_bar_rect.top)
                 ratio = height / self.height
@@ -438,106 +438,39 @@ class Application:
 
         self.dt = min(self.clock.tick(self.fps) * 0.001, 0.066)
 
+    def draw_button(self, button: ToggleButtons):
+        draw_expend_rect(button.outline_rect, (35, 35, 35), 4, -3, 0, 4, self.window)
+        button.draw(self.window)
+        draw_expend_rect(button.outline_rect, (0, 0, 0), 0, 0, 2, 4, self.window)
+
     def draw(self):
         self.window.fill(bluish_grey)
         self.song_info_summary_surf.fill((0, 0, 0, 0))
 
         # drawing control bar----------------------------
         if self.control_bar_rect.top < self.height:
-            pg.draw.rect(
-                self.window,
-                (15, 15, 15),
-                (
-                    self.control_bar_rect[0] + 8,
-                    self.control_bar_rect[1] - 4,
-                    self.control_bar_rect[2] - 4,
-                    self.control_bar_rect[3],
-                ),
-                border_radius=4,
-            )
+            draw_expend_rect(self.control_bar_rect, (15, 15, 15), 8, -4, 4, 4, self.window)
             pg.draw.rect(self.window, (200, 200, 200), self.control_bar_rect, border_radius=4)
             pg.draw.rect(self.window, (160, 160, 160), self.control_bar_rect, border_radius=4, width=6)
-            pg.draw.rect(self.window, (0, 0, 0), self.control_bar_rect, border_radius=4, width=3)
-            pg.draw.rect(
-                self.window,
-                (35, 35, 35),
-                (
-                    self.play_pause_toggle.outline_rect[0] + 4,
-                    self.play_pause_toggle.outline_rect[1] - 3,
-                    self.play_pause_toggle.outline_rect[2],
-                    self.play_pause_toggle.outline_rect[3],
-                ),
-                border_radius=4,
-            )
-            self.play_pause_toggle.draw(self.window)
-            pg.draw.rect(self.window, (0, 0, 0), self.play_pause_toggle.outline_rect, border_radius=4, width=2)
+            draw_expend_rect(self.control_bar_rect, (15, 15, 15), 0, 0, 3, 4, self.window)  # control bar outline
 
-            pg.draw.rect(
-                self.window,
-                (35, 35, 35),
-                (
-                    self.skip_button.outline_rect[0] + 4,
-                    self.skip_button.outline_rect[1] - 3,
-                    self.skip_button.outline_rect[2],
-                    self.skip_button.outline_rect[3],
-                ),
-                border_radius=4,
-            )
-            self.skip_button.draw(self.window)
-            pg.draw.rect(self.window, (0, 0, 0), self.skip_button.outline_rect, border_radius=4, width=2)
+            # DRAWING PLAY_PAUSE_BUTTON
+            self.draw_button(self.play_pause_toggle)
 
-            pg.draw.rect(
-                self.window,
-                (35, 35, 35),
-                (
-                    self.prev_button.outline_rect[0] + 4,
-                    self.prev_button.outline_rect[1] - 3,
-                    self.prev_button.outline_rect[2],
-                    self.prev_button.outline_rect[3],
-                ),
-                border_radius=4,
-            )
-            self.prev_button.draw(self.window)
-            pg.draw.rect(self.window, (0, 0, 0), self.prev_button.outline_rect, border_radius=4, width=2)
+            # DRAWING NEXT_BUTTON
+            self.draw_button(self.skip_button)
+
+            # DRAWING PREV_BUTTON
+            self.draw_button(self.prev_button)
 
             self.slider.draw(self.window)
-            r = self.preview_img.get_rect()
-            pg.draw.rect(
-                self.window,
-                (35, 35, 35),
-                (
-                    self.preview_pos[0] + 4,
-                    self.preview_pos[1] - 3,
-                    r[2],
-                    r[3],
-                ),
-                border_radius=4,
-            )
+
+            # DRAWING PREVIEW IMAGE
+            r = self.preview_img.get_rect(top=self.preview_pos[1], left=self.preview_pos[0])
+            draw_expend_rect(r, (35, 35, 35), 4, -3, 0, 4, self.window)
             self.window.blit(self.preview_img, self.preview_pos)
-            pg.draw.rect(
-                self.window,
-                (160, 160, 160),
-                (
-                    self.preview_pos[0],
-                    self.preview_pos[1],
-                    r[2],
-                    r[3],
-                ),
-                width=3,
-                border_radius=4,
-            )
-            pg.draw.rect(
-                self.window,
-                (0, 0, 0),
-                (
-                    self.preview_pos[0],
-                    self.preview_pos[1],
-                    r[2],
-                    r[3],
-                ),
-                width=2,
-                border_radius=4,
-            )
+            draw_expend_rect(r, (160, 160, 160), 0, 0, 3, 4, self.window)  # outline
+            draw_expend_rect(r, (0, 0, 0), 0, 0, 2, 4, self.window)  # outline
         # ---------------------------
 
         for bar in self.bars:
@@ -570,6 +503,6 @@ if __name__ == "__main__":
         (gp.WIDTH, gp.HEIGHT),
         True,
         "Audio Visualizer",
-        style=Styles.WhiteBars,
+        style=Styles.SoundMeter,
     )
     app.run()

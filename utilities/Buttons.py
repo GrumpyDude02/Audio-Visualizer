@@ -95,6 +95,10 @@ class Buttons:
     def get_attributes(self):
         return (self.rectangle.center, (self.rectangle.width, self.rectangle.height))
 
+    def move_by(self, offset):
+        self.rectangle.top += offset
+        self.outline_rect.top += offset
+
 
 class ToggleButtons(Buttons):
     def __init__(

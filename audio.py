@@ -49,13 +49,15 @@ class AudioFile:  # struct everything should be public
         d = {}
         if format == "MP3":
             audio = MP3(filepath)
-            for t in AudioFile.mp3_tag_to_flac_tag.keys():
-                val = audio.get(t)
-                d[AudioFile.mp3_tag_to_flac_tag[t]] = val[0] if val is not None else None
+            for k in AudioFile.mp3_tag_to_flac_tag.keys():
+                val = audio.get(k)
+                d[AudioFile.mp3_tag_to_flac_tag[k]] = val[0] if val is not None else None
         if format == "FLAC":
             audio = FLAC(filepath)
-            for v in AudioFile.mp3_tag_to_flac_tag.values():
-                d[v] = audio[v][0]
+            for k in AudioFile.mp3_tag_to_flac_tag.values():
+                val = audio.get(k)
+                if val:
+                    d[k] = val[0]
         if d["title"] == None:
             d["title"] = filepath.split("\\" if pf.PLATFORM == "Windows" else "/")[-1]
         return d
