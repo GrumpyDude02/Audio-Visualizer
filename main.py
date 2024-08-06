@@ -1,18 +1,17 @@
-import sys, threading, time, enum
-import pygame as pg
-import globals as gp
-import m_platform as pf
+import sys, threading, time, enum, common, pygame as pg, m_platform as pf, UI.Sliders as sl, utilities.functions as fn
 from audio import AudioManager, AudioFile
 from bar import Bar, SoundMeterBar
-from utilities.Buttons import ToggleButtons, ButtonTemplate
-import utilities.Slider as sl
+from UI.Buttons import ImageButton
+from UI.UIMan import UIState
+from UI.UITemplates import UITemplate
+from utilities.AssetManager import AssetMan
 
 
-ToggleTemplate = ButtonTemplate(
+ToggleTemplate = UITemplate(
     (255, 255, 255), (240, 240, 240), (200, 200, 200), (180, 180, 180), 4, 4, 2, (240, 240, 240), 5, -1, None
 )
 
-slider_template = ButtonTemplate((0, 0, 0), (255, 165, 0), (200, 200, 200), (20, 20, 20), 2, 3, 2, (20, 20, 20), 5, -1, None)
+slider_template = UITemplate((0, 0, 0), (255, 165, 0), (200, 200, 200), (20, 20, 20), 2, 3, 2, (20, 20, 20), 5, -1, None)
 
 bluish_grey = (14, 29, 39)
 
@@ -67,8 +66,6 @@ class Styles(enum.Enum):
 
 
 class Application:
-    HWIND = None
-    TIMER_ID = None
 
     def __init__(
         self,
@@ -112,7 +109,7 @@ class Application:
         }
         self.clock = pg.time.Clock()
 
-        self.am = AudioManager(self, fft_size=gp.fft_size, bands_number=gp.bands_number)
+        self.am = AudioManager(self, fft_size=common.fft_size, bands_number=common.bands_number)
         self.files_queue = []
         self.temp_queue = []
 
@@ -128,10 +125,12 @@ class Application:
 
         self.min_size = min_size
         self.base_font_size = font_size
-        self.scales = [self.width / gp.base_resolution[0], self.height / gp.base_resolution[1]]
+        self.scales = [self.width / common.base_resolution[0], self.height / common.base_resolution[1]]
         self.min_scale = min(self.scales)
         self.font_size = int(self.base_font_size * self.min_scale)
         self.font_path = font_path
+        self.asset_man = AssetMan()
+        UIState.init(self.asset_man)
 
         self.init_font(font_size, font_path)
 
@@ -141,7 +140,7 @@ class Application:
         self.init_bars(style=self.style)
         self.calculate_pos(self.width, self.style, self.scales[0], self.scales[1], self.min_scale)
 
-        self.play_pause_toggle = ToggleButtons(
+        self.play_pause_toggle = ImageButton(
             self.images,
             ToggleTemplate,
             toggle_button_size,
@@ -150,7 +149,7 @@ class Application:
             scale=0.5,
         )
 
-        self.skip_button = ToggleButtons(
+        self.skip_button = ImageButton(
             self.images,
             ToggleTemplate,
             skip_button_size,
@@ -160,7 +159,7 @@ class Application:
             scale=0.5,
         )
 
-        self.prev_button = ToggleButtons(
+        self.prev_button = ImageButton(
             self.images,
             ToggleTemplate,
             skip_button_size,
@@ -170,11 +169,16 @@ class Application:
             scale=0.5,
         )
 
-        self.slider = sl.TimeSlider(slider_template, slider_pos, slider_size, self.small_font, time_format, [0, 1])
+        self.slider = sl.TimeSlider(
+            slider_template, slider_pos, slider_size, self.asset_man.fonts[common.SMALL_FONT_ID], time_format, [0, 1]
+        )
         self.show_control_bar = False
         self.show_settings_bar = False
         self.running = True
         self.rendered_text = {"title": None, "artist_name": None}
+
+        self.control_bar_positions = None
+        self.bars_positions = None
 
     def init_bars(self, style, bars_number: int = None):
         if style == Styles.SoundMeter and bars_number == None:
@@ -184,7 +188,7 @@ class Application:
         self.indexes = dic["indexes"]
         l = len(self.indexes) - 1
 
-        self.bar_width = min(gp.min_bar_width, max(self.width / (l + 1), 2))
+        self.bar_width = min(common.min_bar_width, max(self.width / (l + 1), 2))
 
         offset = (self.width - self.bar_width * (l + 1)) // 2
         self.bars = (
@@ -195,7 +199,7 @@ class Application:
                         "index_range": (self.indexes[i], self.indexes[min(i + 1, l)]),
                     },
                     (i * self.bar_width + offset + self.bar_spacing / 2, self.height),
-                    gp.bar_color,
+                    common.bar_color,
                     (225, 241, 245),
                 )
                 for i in range(len(self.indexes))
@@ -230,13 +234,7 @@ class Application:
         Bar.scale = white_bars_scale_perc * min_scale
         self.preview_size = (min_scale * preview_size, min_scale * preview_size)
 
-        white_surf = pg.Surface(self.preview_size, pg.SRCALPHA)
-        pg.draw.rect(white_surf, (255, 255, 255), white_surf.get_rect(), border_radius=4)
-        self.place_holder_preview = pg.Surface(self.preview_size, pg.SRCALPHA)
-        self.place_holder_preview.fill((150, 150, 150))
-        self.place_holder_preview.blit(white_surf, (0, 0), special_flags=pg.BLEND_RGBA_MIN)
-        center_pos = resized_no_image.get_rect(center=self.place_holder_preview.get_rect().center)
-        self.place_holder_preview.blit(resized_no_image, center_pos)
+        self.place_holder_preview = fn.rounded_image_surf(resized_no_image, (150, 150, 150), self.preview_size, 4)
 
         self.song_info_summary_surf = pg.Surface((270 * scalex, 120 * scaley), pg.HWSURFACE | pg.SRCALPHA)
         self.song_info_summary_surf.fill((0, 0, 0, 0))
@@ -259,14 +257,10 @@ class Application:
             self.target_bars_height = scaley * soundmeter_bars_target_pos
 
     def init_font(self, font_size, font_path: str):
-        try:
-            self.font = pg.font.Font(font_path, font_size)
-            self.small_font = pg.font.Font(font_path, int(font_size * 0.8))
-        except FileNotFoundError:
-            self.font = pg.font.SysFont("Arial Black", size=font_size)
-            self.small_font = pg.font.SysFont("Arial Black", int(font_size * 0.8))
-        self.font.set_bold(True)
-        self.small_font.set_bold(False)
+        self.asset_man.load_font(font_path, common.MAIN_FONT_ID, font_size)
+        self.asset_man.load_font(font_path, common.SMALL_FONT_ID, int(font_size * 0.8))
+        self.asset_man.fonts[common.MAIN_FONT_ID].set_bold(True)
+        self.asset_man.fonts[common.SMALL_FONT_ID].set_bold(False)
 
     def resize_win32(self):
         new_size = (self.window.get_width(), self.window.get_height())
@@ -276,10 +270,10 @@ class Application:
         self.update()
 
     def resize(self, n_size):
-        self.width, self.height = max(n_size[0], gp.MIN_WIDTH), max(n_size[1], gp.MIN_HEIGHT)
+        self.width, self.height = max(n_size[0], common.MIN_WIDTH), max(n_size[1], common.MIN_HEIGHT)
         if (self.width, self.height) != n_size:
             self.window = pg.display.set_mode((self.width, self.height), flags=self.flags)
-        self.scales = [self.width / gp.base_resolution[0], self.height / gp.base_resolution[1]]
+        self.scales = [self.width / common.base_resolution[0], self.height / common.base_resolution[1]]
         self.min_scale = min(self.scales)
         self.calculate_pos(self.width, self.style, self.scales[0], self.scales[1], self.min_scale)
         self.font_size = int(self.base_font_size * self.min_scale)
@@ -287,7 +281,7 @@ class Application:
 
         if not self.indexes:
             return
-        self.bar_width = min(gp.min_bar_width, max(self.width / (len(self.indexes)), 2))
+        self.bar_width = min(common.min_bar_width, max(self.width / (len(self.indexes)), 2))
 
         offset = (self.width - self.bar_width * len(self.indexes)) // 2
         for i in range(len(self.bars)):
@@ -298,12 +292,14 @@ class Application:
         self.play_pause_toggle.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_audio_state())
         self.skip_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_next_button_state())
         self.prev_button.resize(self.images, (self.scales[0], self.scales[1]), self.am.get_previous_button_state())
-        self.slider.resize((self.scales[0], self.scales[1]), self.small_font)
+        self.slider.resize((self.scales[0], self.scales[1]), self.asset_man.fonts[common.SMALL_FONT_ID])
 
     def display_loading(self):
         rect = pg.Rect(self.width * 0.05, self.height * 0.05, self.width * 0.2, self.height * 0.15)
         pos = (rect.center[0], rect.center[1])
-        text_render = self.font.render("Loading file...", color=(255, 255, 255), antialias=True)
+        text_render = self.asset_man.fonts[common.MAIN_FONT_ID].render(
+            "Loading file...", color=(255, 255, 255), antialias=True
+        )
         pg.draw.rect(self.window, (0, 0, 0), rect, border_radius=8)
         pg.draw.rect(self.window, (255, 255, 255), rect, 5, border_radius=8)
         pos = text_render.get_rect(center=pos)
@@ -315,6 +311,8 @@ class Application:
                 self.am.add(self.files_queue.pop(0))
 
     def handle_events(self):
+
+        UIState.update(pg.mouse.get_pressed(), pg.mouse.get_pos(), None)
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 self.running = False
@@ -375,6 +373,7 @@ class Application:
 
     def update(self):
         self.play_pause_toggle.check_input()
+        self.slider.update_elapsed_time(self.am.get_current_audio_pos())
 
         if self.am.update(self.preview_size) in (1, 0):
             update_dict = self.am.get_buttons_state()
@@ -394,8 +393,6 @@ class Application:
             else:
                 self.preview_img = self.place_holder_preview
             self.slider.set_range((0, duration))
-
-        self.slider.update_elapsed_time(self.am.get_current_audio_pos())
 
         t = time.time() * 1000
         if t - self.last_update_time >= 1500 and (
@@ -438,7 +435,7 @@ class Application:
 
         self.dt = min(self.clock.tick(self.fps) * 0.001, 0.066)
 
-    def draw_button(self, button: ToggleButtons):
+    def draw_button(self, button: ImageButton):
         draw_expend_rect(button.outline_rect, (35, 35, 35), 4, -3, 0, 4, self.window)
         button.draw(self.window)
         draw_expend_rect(button.outline_rect, (0, 0, 0), 0, 0, 2, 4, self.window)
@@ -477,8 +474,8 @@ class Application:
             bar.draw(self.window, self.bar_width - self.bar_spacing)
         if len(self.files_queue) > 0:
             self.display_loading()
-        title = self.font.render(self.rendered_text["title"], True, (0, 0, 0))
-        artist = self.small_font.render(self.rendered_text["artist"], True, (0, 0, 0))
+        title = self.asset_man.fonts[common.MAIN_FONT_ID].render(self.rendered_text["title"], True, (0, 0, 0))
+        artist = self.asset_man.fonts[common.SMALL_FONT_ID].render(self.rendered_text["artist"], True, (0, 0, 0))
         self.song_info_summary_surf.blit(title, (5 * self.scales[0], 20 * self.scales[1]))
         self.song_info_summary_surf.blit(artist, (5 * self.scales[0], 45 * self.scales[1]))
         self.window.blit(self.song_info_summary_surf, self.song_summ_pos)
@@ -500,9 +497,9 @@ if __name__ == "__main__":
         "assets/fonts/PixCon.ttf",
         13,
         60,
-        (gp.WIDTH, gp.HEIGHT),
+        (common.WIDTH, common.HEIGHT),
         True,
         "Audio Visualizer",
-        style=Styles.SoundMeter,
+        style=Styles.WhiteBars,
     )
     app.run()

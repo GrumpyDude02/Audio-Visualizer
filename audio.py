@@ -1,4 +1,4 @@
-import threading, time, io, pyaudio, pygame as pg, numpy as np, soundfile as sf, globals as gp
+import threading, time, io, pyaudio, pygame as pg, numpy as np, soundfile as sf, common
 import m_platform as pf
 from scipy.fft import fft
 from scipy.signal.windows import hann
@@ -308,8 +308,8 @@ class AudioManager:
 
         usable_range = self.fft_size // 2
         if bands_number is not None:
-            step = (gp.end_frequency / gp.start_frequency) ** (1 / bands_number)
-            curr_freq = gp.start_frequency
+            step = (common.end_frequency / common.start_frequency) ** (1 / bands_number)
+            curr_freq = common.start_frequency
         else:
             step = 1.06
             curr_freq = 1
@@ -373,7 +373,7 @@ class AudioManager:
         ) or not self.seeking_lock.acquire(blocking=False):
             return (np.zeros((frame_count, self.current.channels), dtype=np.int16), pyaudio.paContinue)
 
-        data = self.current.file.read(frames=frame_count, dtype=gp.dtype)
+        data = self.current.file.read(frames=frame_count, dtype=common.dtype)
         self.current.samples_passed += frame_count
         data_len = len(data)
 

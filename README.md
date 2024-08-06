@@ -1,7 +1,7 @@
 # Audio Visualizer
 
 <p align="center">
-<img style="width:70%; max-width:1956px" src="Assets/images/icon.png">
+<img style="width:70%; max-width:1956px" src="assets/images/icon.png">
 </p>
 
 A simple audio visualizer/player made with pygame-ce.Drag and drop a FLAC/MP3 file into the window, the track should start playing.The project is still in developpment.

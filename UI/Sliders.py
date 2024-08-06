@@ -1,23 +1,25 @@
 import pygame
-from utilities.Buttons import Buttons, ButtonTemplate, DefaultTemplate
 import utilities.functions as func
+from .UIMan import UIState
+from .UITemplates import UITemplate
+from .UIElements import UIElement
 
 
-class Slider:
+class Slider(UIElement):
     ARMED = "ARMED"
     HOVER = "HOVER"
     IDLE = "IDLE"
 
     def __init__(
         self,
-        template: ButtonTemplate,
+        template: UITemplate,
         position: tuple,
         size: tuple,
-        slide_range: tuple = None,
+        slide_range: tuple = [0, 1],
         sc_size: tuple = (1, 1),
         rounding: bool = False,
     ) -> None:
-        self.position = position
+        super().__init__(0, template, size, position, sc_size)
         self.template = template
         self.size = size
         self.state = Slider.IDLE
@@ -25,10 +27,10 @@ class Slider:
         # self.output = self.range[0]
         self.round = rounding
         self.button_color = self.template.bg_color
-        self.set_size(sc_size)
+        self.resize(sc_size)
         self.prev_pos = (0, 0)
 
-    def set_size(self, sc_size):
+    def resize(self, sc_size):
         # self.rendered_text = font.render(self.text, True, self.template.text_color)
         self.rectangle_bar = pygame.Rect(
             self.position[0] * sc_size[0],
@@ -52,12 +54,12 @@ class Slider:
             else None
         )
 
-    def update(self):
+    def handle_event(self):
         """(updated,pressed)"""
         updated = False
         pressed = False
-        mouse_pressed = pygame.mouse.get_pressed()[0]
-        mouse_pos = pygame.mouse.get_pos()
+        mouse_pressed = UIState.left_mouse_down
+        mouse_pos = (UIState.mouse_x, UIState.mouse_y)
         self.button_color = self.template.bg_color
         collision = self.button_rect.collidepoint(mouse_pos) or self.rectangle_bar.collidepoint(mouse_pos)
 
@@ -133,10 +135,9 @@ class ValueSlider(Slider):
 
     def __init__(
         self,
-        template: ButtonTemplate,
+        template: UITemplate,
         position: tuple,
         size: tuple,
-        font: pygame.font.Font,
         text: str,
         slide_range: tuple,
         sc_size: tuple = (1, 1),
@@ -146,12 +147,12 @@ class ValueSlider(Slider):
         self.range = slide_range
         self.output = self.range[0]
         self.text = text
-        self.resize(sc_size, font)  # Pass the font argument here
+        self.resize(sc_size)  # Pass the font argument here
 
-    def resize(self, sc_size, font: pygame.font.Font):
-        self.rendered_text = font.render(self.text, True, self.template.text_color)
-        self.font = font
-        super().set_size(sc_size)
+    def resize(self, sc_size):
+        self.font = UIState.asset_man.fonts[self.asset_ids[0]]
+        self.rendered_text = self.font.render(self.text, True, self.template.text_color)
+        super().resize(sc_size)
         self.text_position = (
             self.position[0] * sc_size[0] - self.rendered_text.get_width() - 40,
             self.position[1] * sc_size[1],
@@ -172,12 +173,12 @@ class ValueSlider(Slider):
 
 
 class TimeSlider(Slider):
+
     def __init__(
         self,
-        template: ButtonTemplate,
+        template: UITemplate,
         position: tuple,
         size: tuple,
-        font: pygame.font,
         format_function,
         time_range: tuple = None,
         sc_size: tuple = (1, 1),
@@ -187,11 +188,11 @@ class TimeSlider(Slider):
         self.range = time_range
         self.output = 0 if self.range is None else self.range[0]
         self.format_function = format_function
-        self.resize(sc_size, font)
+        self.resize(sc_size)
 
-    def resize(self, sc_size, font: pygame.font.Font):
-        self.font = font
-        super().set_size(sc_size)
+    def resize(self, sc_size):
+        self.font = UIState.asset_man.fonts[self.asset_ids[0]]
+        super().resize(sc_size)
         self.set_range(self.range)
 
     def set_range(self, time_range: tuple | list):

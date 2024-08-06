@@ -77,3 +77,14 @@ def ease_out_square(t):
 
 def ease_out_cubic(t):
     return 1 - (1 - t) ** 3
+
+
+def rounded_image_surf(image: pygame.Surface, color: tuple[3], image_size: tuple[2], border_radius: int):
+    white_surf = pygame.Surface(image_size, pygame.SRCALPHA)
+    pygame.draw.rect(white_surf, (255, 255, 255), white_surf.get_rect(), border_radius=border_radius)
+    target_surface = pygame.Surface(image_size, pygame.SRCALPHA)
+    target_surface.fill(color)
+    target_surface.blit(white_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    center_pos = image.get_rect(center=target_surface.get_rect().center)
+    target_surface.blit(image, center_pos)
+    return target_surface

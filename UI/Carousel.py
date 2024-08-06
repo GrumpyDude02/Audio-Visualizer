@@ -1,8 +1,10 @@
 import pygame, pygame.gfxdraw
-from utilities.Buttons import TextButtons, Arrow, ButtonTemplate, DefaultTemplate
+from .Buttons import TextButton, Arrow
+from .UIElements import UIElement
+from .UITemplates import UITemplate
 
 
-class Carousel:
+class Carousel(UIElement):
     ARROW_WIDTH = 0.12
     ARROW_HEIGHT = 0.5
     ARROW_Y_POS = (1 - ARROW_HEIGHT) / 2
@@ -10,12 +12,12 @@ class Carousel:
     def __init__(
         self,
         table: list[str],
-        template: ButtonTemplate,
+        template: UITemplate,
         position: tuple,
         font: pygame.font.Font,
         size: tuple,
         sc_size: tuple = (1, 1),
-        button: TextButtons = None,
+        button: TextButton = None,
         configuration: str = "horizontal",
         text: str = None,
     ) -> None:
