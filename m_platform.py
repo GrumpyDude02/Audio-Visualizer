@@ -46,9 +46,11 @@ if PLATFORM == "Windows":
     def resize(resize_callback, *args):
         pass
 
-    def init_platform_audio(callback_function):
+    def init_platform_audio():
         global deviceEnumerator, output_change_listener
         deviceEnumerator = comtypes.CoCreateInstance(CLSID_MMDeviceEnumerator, IMMDeviceEnumerator, comtypes.CLSCTX_ALL)
+    
+    def run_output_change_listner(callback_function):
         output_change_listener = threading.Thread(target=callback_function, daemon=True)
         output_change_listener.start()
 

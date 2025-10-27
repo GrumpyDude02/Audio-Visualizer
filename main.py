@@ -6,6 +6,7 @@ from audio import AudioManager, AudioFile
 from bar import Bar, SoundMeterBar
 from utilities.Buttons import ToggleButtons, ButtonTemplate
 import utilities.Slider as sl
+from utilities.GUIManager import clear_input_capture
 
 
 ToggleTemplate = ButtonTemplate(
@@ -101,7 +102,6 @@ class Application:
         pg.display.set_icon(pg.image.load("assets/images/icon32x32.png"))
         self.window = pg.display.set_mode(size, flags=self.flags)
         pg.display.set_caption(name)
-        pf.init_resize_function(self.resize_win32)
 
         self.images = {
             AudioFile.PAUSED: pg.image.load("assets/images/play.png").convert_alpha(),
@@ -175,6 +175,8 @@ class Application:
         self.show_settings_bar = False
         self.running = True
         self.rendered_text = {"title": None, "artist_name": None}
+
+        pf.init_resize_function(self.resize_win32)
 
     def init_bars(self, style, bars_number: int = None):
         if style == Styles.SoundMeter and bars_number == None:
@@ -435,6 +437,8 @@ class Application:
         amps = self.am.get_amps()
         for bar in self.bars:
             bar.update(amps, self.dt, self.bar_min_height, self.bar_max_height)
+        
+        clear_input_capture()
 
         self.dt = min(self.clock.tick(self.fps) * 0.001, 0.066)
 
@@ -503,6 +507,6 @@ if __name__ == "__main__":
         (gp.WIDTH, gp.HEIGHT),
         True,
         "Audio Visualizer",
-        style=Styles.SoundMeter,
+        style=Styles.MinimalistSoundMeter,
     )
     app.run()

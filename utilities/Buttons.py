@@ -1,6 +1,7 @@
 import pygame, pygame.gfxdraw
 from dataclasses import dataclass
 from copy import deepcopy
+from.GUIManager import InputState
 
 
 @dataclass
@@ -22,6 +23,7 @@ DefaultTemplate = ButtonTemplate(
     (255, 255, 255), (0, 0, 0), (0, 50, 200), (255, 255, 255), -1, 4, -1, (96, 96, 96), 5, -1, None
 )
 
+locked_element = None
 
 class Buttons:
     idle = "idle"
@@ -73,16 +75,22 @@ class Buttons:
             return False
         else:
             mouse_pos = pygame.mouse.get_pos()
+            if InputState.is_captured_by_other(self):
+                    self.state = Buttons.idle
+                    return False 
             if self.rectangle.collidepoint(mouse_pos):
                 self.color = self.template.hover_color
                 if pygame.mouse.get_pressed()[0]:
+                    InputState.capture_mouse(self)  # Capture mouse on press
                     self.state = Buttons.armed
                 elif self.state == Buttons.armed:
+                    InputState.release_mouse(self)  # Release on click completion
                     self.state = Buttons.idle
                     return True
             else:
                 self.color = self.template.bg_color
                 self.state = Buttons.idle
+                
             return False
 
     def draw(self, screen):

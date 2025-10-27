@@ -183,15 +183,16 @@ class AudioManager:
         self.bars = None
         self.num_averages = 0
         self.amps = [0 for _ in range(self.fft_size // 2)]
+        pf.init_platform_audio()
         self.init_pyaudio()
-        pf.init_platform_audio(self.check_output_change)
+        pf.run_output_change_listner(self.check_output_change)
         self.timeline_update_status = (False, False)  # (updated,pressed)
         self.cache = {}
         self.current_index = 0
 
     def init_pyaudio(self):
         self.loader = pyaudio.PyAudio()
-        self.default_output_device = self.loader.get_default_output_device_info()["name"]
+        self.default_output_device = pf.get_default_output_device()[1]
 
     def add(self, filepaths):
         """should be called by another thread"""
@@ -201,7 +202,7 @@ class AudioManager:
 
     def check_output_change(self):
         while True:
-            if self.default_output_device != pf.get_default_output_device()[0]:
+            if self.default_output_device != pf.get_default_output_device()[1]:
                 self.terminate(clear=False)
                 self.init_pyaudio()
                 if self.current is not None:

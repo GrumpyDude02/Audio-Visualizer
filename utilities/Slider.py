@@ -1,12 +1,13 @@
 import pygame
 from utilities.Buttons import Buttons, ButtonTemplate, DefaultTemplate
 import utilities.functions as func
+from .GUIManager import InputState
 
 
 class Slider:
-    ARMED = "ARMED"
-    HOVER = "HOVER"
-    IDLE = "IDLE"
+    armed = "armed"
+    hover = "hover"
+    idle = "idle"
 
     def __init__(
         self,
@@ -20,7 +21,7 @@ class Slider:
         self.position = position
         self.template = template
         self.size = size
-        self.state = Slider.IDLE
+        self.state = Slider.idle
         self.range = slide_range
         # self.output = self.range[0]
         self.round = rounding
@@ -53,6 +54,63 @@ class Slider:
         )
 
     def update(self):
+        """(updated, pressed)"""
+        updated = False
+        pressed = False
+        mouse_pressed = pygame.mouse.get_pressed()[0]
+        mouse_pos = pygame.mouse.get_pos()
+        self.button_color = self.template.bg_color
+        
+        # Check if input is captured by another element (e.g., button)
+        if InputState.is_captured_by_other(self):
+            self.state = Slider.idle
+            return (updated, pressed)
+        
+        collision = self.button_rect.collidepoint(mouse_pos) or self.rectangle_bar.collidepoint(mouse_pos)
+
+        if not self.state == Slider.armed and collision:
+            self.state = Slider.hover
+            self.button_color = self.template.hover_color
+            if mouse_pressed:
+                # Capture input for slider
+                InputState.capture_mouse(self)
+                self.state = Slider.armed
+                pressed = True
+                return (updated, pressed)
+
+        if not mouse_pressed:
+            # Release capture when mouse is released
+            if self.state == Slider.armed:
+                InputState.release_mouse(self)
+            self.state = Slider.idle
+            return (updated, pressed)
+
+        if self.state == Slider.armed:
+            pressed = True
+            self.button_color = self.template.hover_color
+            self.button_rect.centerx = max(
+                self.rectangle_bar.left,
+                min(mouse_pos[0], self.rectangle_bar.width + self.rectangle_bar.left),
+            )
+            self.output = func.map_values(
+                self.button_rect.centerx,
+                (self.rectangle_bar.left, self.rectangle_bar.left + self.rectangle_bar.width),
+                self.range,
+            )
+            if self.round:
+                self.button_rect.centerx = func.map_values(
+                    self.output,
+                    self.range,
+                    (self.rectangle_bar.left, self.rectangle_bar.left + self.rectangle_bar.width),
+                )
+            self.button_outline.center = self.button_rect.center
+            if self.prev_pos[0] != mouse_pos[0]:
+                updated = True
+            self.prev_pos = mouse_pos
+            
+        return (updated, pressed)
+
+    def update1(self):
         """(updated,pressed)"""
         updated = False
         pressed = False
@@ -61,19 +119,19 @@ class Slider:
         self.button_color = self.template.bg_color
         collision = self.button_rect.collidepoint(mouse_pos) or self.rectangle_bar.collidepoint(mouse_pos)
 
-        if not self.state == Slider.ARMED and collision:
-            self.state = Slider.HOVER
+        if not self.state == Slider.armed and collision:
+            self.state = Slider.hover
             self.button_color = self.template.hover_color
             if mouse_pressed:
-                self.state = Slider.ARMED
+                self.state = Slider.armed
                 pressed = True
                 return (updated, pressed)
 
         if not mouse_pressed:
-            self.state = Slider.IDLE
+            self.state = Slider.idle
             return (updated, pressed)
 
-        if self.state == Slider.ARMED:
+        if self.state == Slider.armed:
             pressed = True
             self.button_color = self.template.hover_color
             self.button_rect.centerx = max(
